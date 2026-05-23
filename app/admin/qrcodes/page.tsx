@@ -1,124 +1,168 @@
 "use client";
 
-import { useState } from "react";
-import { Download, QrCode, Search, ChevronDown, ChevronRight, CheckSquare, Square } from "lucide-react";
+import { useEffect, useState, useTransition, useRef } from "react";
+import { Download, QrCode, Search, ChevronDown, ChevronRight, CheckSquare, Square, Loader2 } from "lucide-react";
 import VenueQRCard from "@/components/ui/VenueQRcard";
+import QRCode from "qrcode";
+import {
+  listVenues,
+  listTablesByVenue,
+  listSeatsByTable,
+  generateQRCodeForSeat,
+  uploadQRImage,
+  listQRCodesByVenue,
+} from "@/lib/actions/admin.actions";
+import type { VenueDoc, TableDoc, SeatDoc, QRCodeDoc } from "@/types/appwrite";
 
-type Seat = {
-  id: string;
-  seatNumber: number;
-  slug: string;
-  generated: boolean;
+type SeatWithQR = SeatDoc & { qr: QRCodeDoc | null };
+type TableWithSeats = TableDoc & { seats: SeatWithQR[] };
+type VenueWithData  = VenueDoc & { tables: TableWithSeats[] };
+
+const ACCENT: Record<string, string> = {
+  restaurant: "#c9a84c",
+  pool:       "#5bb8d4",
+  lobby:      "#d4af6a",
 };
-
-type Table = {
-  id: string;
-  tableNumber: number;
-  seats: Seat[];
-};
-
-type VenueQR = {
-  id: string;
-  name: string;
-  slug: string;
-  accentColor: string;
-  tables: Table[];
-};
-
-const mockVenues: VenueQR[] = [
-  {
-    id: "v1", name: "Restaurant", slug: "restaurant", accentColor: "#c9a84c",
-    tables: [
-      {
-        id: "t1", tableNumber: 1,
-        seats: [
-          { id: "s1", seatNumber: 1, slug: "restaurant-t1-s1", generated: true },
-          { id: "s2", seatNumber: 2, slug: "restaurant-t1-s2", generated: true },
-          { id: "s3", seatNumber: 3, slug: "restaurant-t1-s3", generated: false },
-          { id: "s4", seatNumber: 4, slug: "restaurant-t1-s4", generated: false },
-        ],
-      },
-      {
-        id: "t2", tableNumber: 2,
-        seats: [
-          { id: "s5", seatNumber: 1, slug: "restaurant-t2-s1", generated: true },
-          { id: "s6", seatNumber: 2, slug: "restaurant-t2-s2", generated: true },
-        ],
-      },
-    ],
-  },
-  {
-    id: "v2", name: "Pool Side", slug: "pool", accentColor: "#5bb8d4",
-    tables: [
-      {
-        id: "t3", tableNumber: 1,
-        seats: [
-          { id: "s7", seatNumber: 1, slug: "pool-t1-s1", generated: false },
-          { id: "s8", seatNumber: 2, slug: "pool-t1-s2", generated: false },
-          { id: "s9", seatNumber: 3, slug: "pool-t1-s3", generated: false },
-          { id: "s10", seatNumber: 4, slug: "pool-t1-s4", generated: false },
-        ],
-      },
-    ],
-  },
-  {
-    id: "v3", name: "Lobby Café", slug: "lobby", accentColor: "#d4af6a",
-    tables: [
-      {
-        id: "t4", tableNumber: 1,
-        seats: [
-          { id: "s11", seatNumber: 1, slug: "lobby-t1-s1", generated: true },
-          { id: "s12", seatNumber: 2, slug: "lobby-t1-s2", generated: false },
-        ],
-      },
-    ],
-  },
-];
 
 export default function QRCodesPage() {
-  const [venues, setVenues]             = useState(mockVenues);
-  const [expandedVenue, setExpanded]    = useState<string | null>("v1");
-  const [expandedTable, setExpandedTbl] = useState<string | null>("t1");
+  const [venues, setVenues]             = useState<VenueWithData[]>([]);
+  const [loading, setLoading]           = useState(true);
+  const [expandedVenue, setExpanded]    = useState<string | null>(null);
+  const [expandedTable, setExpandedTbl] = useState<string | null>(null);
   const [search, setSearch]             = useState("");
   const [selected, setSelected]         = useState<Set<string>>(new Set());
+  const [isPending, startTransition]    = useTransition();
+  const [generating, setGenerating]     = useState<Set<string>>(new Set());
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      const vs = await listVenues();
+      const full: VenueWithData[] = await Promise.all(
+        vs.map(async (v) => {
+          const tables  = await listTablesByVenue(v.$id);
+          // Fetch all QR codes for this venue at once
+          const allQRs  = await listQRCodesByVenue(v.$id);
+          // Build a map of seat_id → QRCodeDoc
+          const qrBySeat: Record<string, QRCodeDoc> = {};
+          for (const qr of allQRs) {
+            // Keep the one with qr_image_url if multiple exist
+            if (!qrBySeat[qr.seat_id] || qr.qr_image_url) {
+              qrBySeat[qr.seat_id] = qr;
+            }
+          }
+          const withSeats: TableWithSeats[] = await Promise.all(
+            tables.map(async (t) => {
+              const seats = await listSeatsByTable(t.$id);
+              const seatsWithQR: SeatWithQR[] = seats.map((s) => ({
+                ...s,
+                qr: qrBySeat[s.$id] ?? null,
+              }));
+              return { ...t, seats: seatsWithQR };
+            })
+          );
+          return { ...v, tables: withSeats };
+        })
+      );
+      setVenues(full);
+      if (full.length > 0) setExpanded(full[0].$id);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { load(); }, []); // eslint-disable-line
+
+  const handleGenerateSingle = async (
+    venue: VenueWithData,
+    table: TableWithSeats,
+    seat: SeatWithQR
+  ) => {
+    setGenerating((p) => new Set(p).add(seat.$id));
+    try {
+      // 1. Create QR doc in Appwrite
+      const qrDoc = await generateQRCodeForSeat({
+        seatId:      seat.$id,
+        venueSlug:   venue.slug,
+        tableNumber: table.table_number,
+        seatNumber:  seat.seat_number,
+      });
+
+      // 2. Generate QR image using npm qrcode package
+      const dataUrl = await QRCode.toDataURL(qrDoc.resolved_url, {
+        width:  300,
+        margin: 2,
+        color:  { dark: "#000000", light: "#ffffff" },
+      });
+
+      // 3. Convert dataURL to blob
+      const res  = await fetch(dataUrl);
+      const blob = await res.blob();
+
+      // 4. Upload to Appwrite Storage
+      const updated = await uploadQRImage(qrDoc.$id, blob, `${qrDoc.slug}.png`);
+
+      // 5. Update local state
+      setVenues((p) =>
+        p.map((v) =>
+          v.$id === venue.$id
+            ? {
+                ...v,
+                tables: v.tables.map((t) =>
+                  t.$id === table.$id
+                    ? { ...t, seats: t.seats.map((s) => s.$id === seat.$id ? { ...s, qr: updated } : s) }
+                    : t
+                ),
+              }
+            : v
+        )
+      );
+    } catch (err) {
+      console.error("QR generation failed", err);
+      alert("QR generation failed — check console.");
+    } finally {
+      setGenerating((p) => { const next = new Set(p); next.delete(seat.$id); return next; });
+    }
+  };
+
+  // Generate QRs for all seats in a table
+  const handleGenerateTable = async (venue: VenueWithData, table: TableWithSeats) => {
+    for (const seat of table.seats) {
+      if (!seat.qr) await handleGenerateSingle(venue, table, seat);
+    }
+  };
+
+  // Download a single QR image
+  const handleDownload = (qr: QRCodeDoc, label: string) => {
+    if (!qr.qr_image_url) return;
+    const a  = document.createElement("a");
+    a.href   = qr.qr_image_url;
+    a.download = `${label}.png`;
+    a.click();
+  };
+
+  const toggleSelect = (id: string) =>
+    setSelected((p) => { const next = new Set(p); next.has(id) ? next.delete(id) : next.add(id); return next; });
 
   const totalSeats     = venues.reduce((s, v) => s + v.tables.reduce((ts, t) => ts + t.seats.length, 0), 0);
-  const generatedSeats = venues.reduce((s, v) => s + v.tables.reduce((ts, t) => ts + t.seats.filter((seat) => seat.generated).length, 0), 0);
-
-  const markGenerated = (venueId: string, tableId: string, seatIds: string[]) => {
-    setVenues((p) =>
-      p.map((v) =>
-        v.id === venueId
-          ? {
-              ...v,
-              tables: v.tables.map((t) =>
-                t.id === tableId
-                  ? { ...t, seats: t.seats.map((s) => seatIds.includes(s.id) ? { ...s, generated: true } : s) }
-                  : t
-              ),
-            }
-          : v
-      )
-    );
-  };
-
-  const toggleSelect = (id: string) => {
-    setSelected((p) => {
-      const next = new Set(p);
-      next.has(id) ? next.delete(id) : next.add(id);
-      return next;
-    });
-  };
+  const generatedSeats = venues.reduce((s, v) => s + v.tables.reduce((ts, t) => ts + t.seats.filter((seat) => !!seat.qr).length, 0), 0);
 
   const filteredVenues = venues.map((v) => ({
     ...v,
     tables: v.tables.map((t) => ({
       ...t,
       seats: t.seats.filter((s) =>
-        search === "" || s.slug.toLowerCase().includes(search.toLowerCase())
+        search === "" || `${v.slug}-t${t.table_number}-s${s.seat_number}`.toLowerCase().includes(search.toLowerCase())
       ),
     })).filter((t) => t.seats.length > 0 || search === ""),
   })).filter((v) => v.tables.length > 0 || search === "");
+
+  if (loading) return (
+    <div className="p-8 flex items-center gap-3 text-white/30">
+      <Loader2 size={16} className="animate-spin" />
+      <span className="text-[13px]">Loading QR codes…</span>
+    </div>
+  );
 
   return (
     <div className="p-8 max-w-5xl">
@@ -132,21 +176,14 @@ export default function QRCodesPage() {
             Generate and download QR codes for every seat across all venues
           </p>
         </div>
-        <button
-          disabled={selected.size === 0}
-          className="flex items-center gap-2 text-[13px] px-4 py-2 rounded-lg border transition-colors cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
-          style={{ background: "#c9a84c15", borderColor: "#c9a84c40", color: "#e8d59a" }}
-        >
-          <Download size={14} /> Download Selected ({selected.size})
-        </button>
       </div>
 
       {/* Stats */}
       <div className="grid grid-cols-3 gap-4 mb-8">
         {[
-          { label: "Total Seats",     value: totalSeats },
-          { label: "QRs Generated",   value: generatedSeats },
-          { label: "Pending",         value: totalSeats - generatedSeats },
+          { label: "Total Seats",   value: totalSeats },
+          { label: "QRs Generated", value: generatedSeats },
+          { label: "Pending",       value: totalSeats - generatedSeats },
         ].map((s) => (
           <div key={s.label} className="bg-white/[0.03] border border-white/[0.06] rounded-xl px-5 py-4">
             <p className="text-[11px] text-white/30 uppercase tracking-wider mb-1" style={{ fontFamily: "var(--font-cinzel)" }}>{s.label}</p>
@@ -155,27 +192,28 @@ export default function QRCodesPage() {
         ))}
       </div>
 
-      {/* Preview cards — generated QRs */}
-      <div className="mb-8">
-        <p className="text-[11px] text-white/30 uppercase tracking-wider mb-4" style={{ fontFamily: "var(--font-cinzel)" }}>
-          Preview
-        </p>
-        <div className="flex gap-4 flex-wrap">
-          {venues.map((v) =>
-            v.tables.slice(0, 1).map((t) =>
-              t.seats.filter((s) => s.generated).slice(0, 2).map((s) => (
-                <VenueQRCard
-                  key={s.id}
-                  name={v.name}
-                  area={`Table ${t.tableNumber} · Seat ${s.seatNumber}`}
-                  tag={`/${s.slug}`}
-                  accentColor={v.accentColor}
-                />
-              ))
-            )
-          )}
+      {/* Preview — generated QRs */}
+      {generatedSeats > 0 && (
+        <div className="mb-8">
+          <p className="text-[11px] text-white/30 uppercase tracking-wider mb-4" style={{ fontFamily: "var(--font-cinzel)" }}>Preview</p>
+          <div className="flex gap-4 flex-wrap">
+            {venues.flatMap((v) =>
+              v.tables.flatMap((t) =>
+                t.seats.filter((s) => s.qr?.qr_image_url).slice(0, 2).map((s) => (
+                  <VenueQRCard
+                    key={s.$id}
+                    name={v.name}
+                    area={`Table ${t.table_number} · Seat ${s.seat_number}`}
+                    tag={`/${v.slug}-t${t.table_number}-s${s.seat_number}`}
+                    accentColor={ACCENT[v.slug] ?? "#c9a84c"}
+                    qrImageUrl={s.qr?.qr_image_url ?? undefined}
+                  />
+                ))
+              )
+            )}
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Search */}
       <div className="relative mb-5">
@@ -183,81 +221,92 @@ export default function QRCodesPage() {
         <input
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search by slug…"
+          placeholder="Filter by venue / table…"
           className="w-full max-w-sm bg-white/[0.03] border border-white/[0.06] rounded-lg pl-9 pr-4 py-2 text-[13px] text-white placeholder-white/20 outline-none focus:border-[#c9a84c]/40"
         />
       </div>
 
-      {/* Venue → Table → Seat tree */}
+      {/* Tree */}
       <div className="flex flex-col gap-3">
         {filteredVenues.map((venue) => (
-          <div key={venue.id} className="bg-white/[0.03] border border-white/[0.06] rounded-xl overflow-hidden">
-            {/* Venue header */}
+          <div key={venue.$id} className="bg-white/[0.03] border border-white/[0.06] rounded-xl overflow-hidden">
+            {/* Venue row */}
             <div
               className="flex items-center gap-3 px-5 py-4 cursor-pointer hover:bg-white/[0.02] transition-colors"
-              onClick={() => setExpanded((p) => p === venue.id ? null : venue.id)}
+              onClick={() => setExpanded((p) => p === venue.$id ? null : venue.$id)}
             >
               <span className="text-white/40">
-                {expandedVenue === venue.id ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                {expandedVenue === venue.$id ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
               </span>
-              <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ background: venue.accentColor }} />
+              <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ background: ACCENT[venue.slug] ?? "#c9a84c" }} />
               <span className="flex-1 text-[14px] text-white font-medium">{venue.name}</span>
               <span className="text-[11px] text-white/30">
-                {venue.tables.reduce((s, t) => s + t.seats.filter((seat) => seat.generated).length, 0)}
+                {venue.tables.reduce((s, t) => s + t.seats.filter((s) => !!s.qr).length, 0)}
                 /{venue.tables.reduce((s, t) => s + t.seats.length, 0)} generated
               </span>
-              <button
-                onClick={(e) => { e.stopPropagation(); markGenerated(venue.id, venue.tables[0]?.id, venue.tables.flatMap((t) => t.seats.map((s) => s.id))); }}
-                className="flex items-center gap-1.5 text-[11px] border px-2.5 py-1 rounded transition-colors cursor-pointer ml-2"
-                style={{ color: `${venue.accentColor}99`, borderColor: `${venue.accentColor}30` }}
-              >
-                <QrCode size={11} /> Generate All
-              </button>
             </div>
 
             {/* Tables */}
-            {expandedVenue === venue.id && (
+            {expandedVenue === venue.$id && (
               <div className="border-t border-white/[0.06]">
                 {venue.tables.map((table) => (
-                  <div key={table.id} className="border-b border-white/[0.04] last:border-0">
-                    {/* Table row */}
+                  <div key={table.$id} className="border-b border-white/[0.04] last:border-0">
                     <div
-                      className="flex items-center gap-3 px-6 py-3 cursor-pointer hover:bg-white/[0.01] transition-colors"
-                      onClick={() => setExpandedTbl((p) => p === table.id ? null : table.id)}
+                      className="flex items-center gap-3 px-6 py-3 cursor-pointer hover:bg-white/[0.01]"
+                      onClick={() => setExpandedTbl((p) => p === table.$id ? null : table.$id)}
                     >
-                      <span className="text-white/30 text-[13px]">
-                        {expandedTable === table.id ? "▾" : "▸"}
-                      </span>
-                      <span className="flex-1 text-[13px] text-white/70">Table {table.tableNumber}</span>
+                      <span className="text-white/30 text-[13px]">{expandedTable === table.$id ? "▾" : "▸"}</span>
+                      <span className="flex-1 text-[13px] text-white/70">Table {table.table_number}</span>
                       <span className="text-[11px] text-white/30">
-                        {table.seats.filter((s) => s.generated).length}/{table.seats.length} seats
+                        {table.seats.filter((s) => !!s.qr).length}/{table.seats.length} seats
                       </span>
                       <button
-                        onClick={(e) => { e.stopPropagation(); markGenerated(venue.id, table.id, table.seats.map((s) => s.id)); }}
+                        onClick={(e) => { e.stopPropagation(); handleGenerateTable(venue, table); }}
                         className="flex items-center gap-1.5 text-[11px] text-[#c9a84c]/50 hover:text-[#c9a84c] cursor-pointer ml-2"
+                        disabled={isPending}
                       >
-                        <QrCode size={11} /> Generate
+                        <QrCode size={11} /> Generate All
                       </button>
                     </div>
 
-                    {/* Seats */}
-                    {expandedTable === table.id && (
+                    {expandedTable === table.$id && (
                       <div className="px-8 pb-3 grid grid-cols-1 gap-1.5">
-                        {table.seats.map((seat) => (
-                          <div key={seat.id} className="flex items-center gap-3 bg-white/[0.02] border border-white/[0.04] rounded-lg px-4 py-2.5">
-                            <button onClick={() => toggleSelect(seat.id)} className="text-white/30 hover:text-white/60 cursor-pointer flex-shrink-0">
-                              {selected.has(seat.id) ? <CheckSquare size={14} className="text-[#c9a84c]" /> : <Square size={14} />}
-                            </button>
-                            <div className="w-[9px] h-[9px] rounded-full flex-shrink-0" style={{ background: venue.accentColor, opacity: seat.generated ? 1 : 0.3 }} />
-                            <span className="flex-1 text-[12px] text-white/60 font-mono">{seat.slug}</span>
-                            <span className={`text-[10px] px-1.5 py-0.5 rounded border ${seat.generated ? "border-green-500/20 text-green-400/70 bg-green-500/10" : "border-white/[0.08] text-white/25"}`}>
-                              {seat.generated ? "Generated" : "Pending"}
-                            </span>
-                            <button className="text-white/20 hover:text-white/60 cursor-pointer" disabled={!seat.generated}>
-                              <Download size={13} />
-                            </button>
-                          </div>
-                        ))}
+                        {table.seats.map((seat) => {
+                          const isGen = !!seat.qr;
+                          const isLoading = generating.has(seat.$id);
+                          return (
+                            <div key={seat.$id} className="flex items-center gap-3 bg-white/[0.02] border border-white/[0.04] rounded-lg px-4 py-2.5">
+                              <button onClick={() => toggleSelect(seat.$id)} className="text-white/30 hover:text-white/60 cursor-pointer flex-shrink-0">
+                                {selected.has(seat.$id) ? <CheckSquare size={14} className="text-[#c9a84c]" /> : <Square size={14} />}
+                              </button>
+                              <div className="w-[9px] h-[9px] rounded-full flex-shrink-0" style={{ background: ACCENT[venue.slug] ?? "#c9a84c", opacity: isGen ? 1 : 0.3 }} />
+                              <span className="flex-1 text-[12px] text-white/60 font-mono">
+                                {venue.slug}-t{table.table_number}-s{seat.seat_number}
+                              </span>
+                              <span className={`text-[10px] px-1.5 py-0.5 rounded border ${isGen ? "border-green-500/20 text-green-400/70 bg-green-500/10" : "border-white/[0.08] text-white/25"}`}>
+                                {isGen ? "Generated" : "Pending"}
+                              </span>
+                              {!isGen && (
+                                <button
+                                  onClick={() => handleGenerateSingle(venue, table, seat)}
+                                  disabled={isLoading}
+                                  className="flex items-center gap-1 text-[11px] text-[#c9a84c]/50 hover:text-[#c9a84c] cursor-pointer"
+                                >
+                                  {isLoading ? <Loader2 size={11} className="animate-spin" /> : <QrCode size={11} />}
+                                  {isLoading ? "Generating…" : "Generate"}
+                                </button>
+                              )}
+                              {isGen && seat.qr && (
+                                <button
+                                  onClick={() => handleDownload(seat.qr!, `${venue.slug}-t${table.table_number}-s${seat.seat_number}`)}
+                                  className="text-white/20 hover:text-white/60 cursor-pointer"
+                                >
+                                  <Download size={13} />
+                                </button>
+                              )}
+                            </div>
+                          );
+                        })}
                       </div>
                     )}
                   </div>

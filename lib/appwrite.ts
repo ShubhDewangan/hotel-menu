@@ -1,33 +1,42 @@
 // ─────────────────────────────────────────────────────────────
 // lib/appwrite.ts
-//
-// Appwrite client singleton + all collection/database IDs.
-// Import { db, COLLECTIONS } everywhere instead of hardcoding
-// IDs across action files.
 // ─────────────────────────────────────────────────────────────
 
 import { Client, Databases, Storage, ID, Query } from "appwrite";
 
-// ── Client ───────────────────────────────────────────────────
+const ENDPOINT   = process.env.NEXT_PUBLIC_ENDPOINT ?? "https://cloud.appwrite.io/v1";
+const PROJECT_ID = process.env.NEXT_PUBLIC_APPWRITE_PROJECT_ID ?? "";
+
+// ── Public client (for guest menu page) ──────────────────────
 const client = new Client()
-  .setEndpoint(process.env.NEXT_PUBLIC_APPWRITE_ENDPOINT ?? "https://cloud.appwrite.io/v1")
-  .setProject(process.env.NEXT_PUBLIC_APPWRITE_PROJECT_ID ?? "");
+  .setEndpoint(ENDPOINT)
+  .setProject(PROJECT_ID);
 
 export const db      = new Databases(client);
 export const storage = new Storage(client);
-
-// Re-export SDK helpers so action files only import from here
 export { ID, Query };
 
+// ── Authenticated client (for admin actions) ─────────────────
+// Pass the session secret from the admin cookie
+export function getAuthClient(sessionSecret: string) {
+  const authClient = new Client()
+    .setEndpoint(ENDPOINT)
+    .setProject(PROJECT_ID)
+    .setSession(sessionSecret);
+  return {
+    db:      new Databases(authClient),
+    storage: new Storage(authClient),
+  };
+}
+
 // ── Database ID ──────────────────────────────────────────────
-export const DB_ID = process.env.NEXT_PUBLIC_APPWRITE_DB_ID ?? "";
+export const DB_ID = process.env.NEXT_PUBLIC_DATABASE_ID ?? "";
 
 // ── Collection IDs ───────────────────────────────────────────
-// Keep in sync with the Appwrite console collection names.
 export const COLLECTIONS = {
-  MENUS:           "menus",
-  MENU_CATEGORIES: "menu_categories",   // create this collection in Appwrite
-  MENU_ITEMS:      "menu_items",        // create this collection in Appwrite
+  MENUS:           "menu",
+  MENU_CATEGORIES: "menu_categories",
+  MENU_ITEMS:      "menu_items",
   VENUES:          "venues",
   TABLES:          "tables",
   SEATS:           "seats",
