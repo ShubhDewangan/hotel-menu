@@ -75,10 +75,12 @@ export interface SeatDoc extends Models.Document {
 // qr_codes
 // ─────────────────────────────────────────────────────────────
 export interface QRCodeDoc extends Models.Document {
-  seat_id:      string;
+  table_id:     string;
+  seat_id:      string | null;
   event_id:     string | null;
   slug:         string;
   qr_image_url: string | null;
+  file_id:      string | null;
   resolved_url: string;
   generated_at: string | null;
   is_active:    boolean;
@@ -110,8 +112,10 @@ export interface VenueWithTables extends VenueDoc {
   tables: TableDoc[];
 }
 
-export interface QRCodeWithSeat extends QRCodeDoc {
-  seat:  SeatDoc;
+export interface QRCodeWithTable extends QRCodeDoc {
   table: TableDoc;
   venue: VenueDoc;
 }
+
+// Keep for backward compat
+export type QRCodeWithSeat = QRCodeWithTable;

@@ -24,10 +24,10 @@ export default function AdminLoginPage() {
   const result = await adminLogin({ email, password, code });
 
   if (result.success) {
-  window.location.replace("/admin/venues");
+  router.replace("/admin/venues");
 } else {
     setError(result.error ?? "Login failed.");
-    console.log('hello')
+    // console.log('hello')
     setLoading(false);
   }
 };
