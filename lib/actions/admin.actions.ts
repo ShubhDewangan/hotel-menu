@@ -23,6 +23,7 @@ function buildMenuConfig(menu: MenuDoc, categories: MenuCategoryDoc[], itemsMap:
       items: (itemsMap[cat.$id] ?? []).sort((a, b) => a.sort_order - b.sort_order).map((item): MenuItem => ({
         name: item.name, description: item.description, price: item.price,
         isVeg: item.is_veg, isAvailable: item.is_available, sortOrder: item.sort_order,
+        image: undefined
       })),
     })),
   };
