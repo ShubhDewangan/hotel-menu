@@ -18,6 +18,7 @@ export type MenuTheme  = VenueTheme | "event";
 // ─────────────────────────────────────────────────────────────
 
 export interface MenuItemConfig {
+  image: any;
   name:        string;
   description: string;
   price:       number;

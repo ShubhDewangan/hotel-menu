@@ -38,7 +38,7 @@ const themes: Record<MenuTheme, ThemeConfig> = {
   // ── Restaurant — light cream card on dark patterned bg ─────
   restaurant: {
     bg:          "bg-[#1a1108]",
-    bgImage:     "/image.png",
+    bgImage:     "/bg-restaurant-green.png",
     tagLine:     "text-[#d4af6a]",
     accentText:  "text-[#d4af6a]",
     accentHex:   "#d4af6a",

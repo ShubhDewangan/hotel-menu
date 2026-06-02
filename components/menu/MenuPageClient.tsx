@@ -1,14 +1,17 @@
+/* eslint-disable react-hooks/set-state-in-effect */
+/* eslint-disable react-hooks/refs */
 "use client";
 
-import { useState, useCallback } from "react";
-import Image             from "next/image";
+import { useState, useCallback, useRef, useEffect } from "react";
+import Image                     from "next/image";
 import { Search, X, ShoppingBag } from "lucide-react";
-import LanguageButton    from "@/components/ui/LanguageButton";
-import MenuCarouselTrack from "@/components/menu/MenuCarouselTrack";
-import CartDrawer        from "@/components/menu/CartDrawer";
+import LanguageButton            from "@/components/ui/LanguageButton";
+import CategoryPillCarousel      from "@/components/menu/CategoryPillCarousel";
+import MenuItemsList             from "@/components/menu/MenuItemsList";
+import CartDrawer                from "@/components/menu/CartDrawer";
 import { CartProvider, useCart } from "@/context/CartContext";
-import { MenuConfig }    from "@/types/menu";
-import { ThemeConfig }   from "@/lib/themeConfig";
+import { MenuConfig }            from "@/types/menu";
+import { ThemeConfig }           from "@/lib/themeConfig";
 
 interface MenuPageClientProps {
   menu:      MenuConfig;
@@ -17,175 +20,190 @@ interface MenuPageClientProps {
   isEvent:   boolean;
 }
 
-function MenuPageInner({
-  menu,
-  theme,
-}: Omit<MenuPageClientProps, "venueSlug" | "isEvent">) {
-  const [activeSectionIdx, setActiveSectionIdx] = useState(0);
-  const [cartOpen, setCartOpen]                 = useState(false);
-  const [searchQuery, setSearchQuery]           = useState("");
-  const [searchActive, setSearchActive]         = useState(false);
-
+function MenuPageInner({ menu, theme }: Omit<MenuPageClientProps, "venueSlug" | "isEvent">) {
+  const [activeCategory, setActiveCategory] = useState<string>(
+    menu.categories[0]?.name ?? ""
+  );
+  const [cartOpen,    setCartOpen]    = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
   const { totalCount } = useCart();
 
-  const handleActiveChange = useCallback((cardIndex: number) => {
-    setActiveSectionIdx(Math.max(0, cardIndex - 1));
+  const visited = useRef<Set<string>>(new Set([menu.categories[0]?.name ?? ""]));
+
+  const handleCategorySelect = useCallback((name: string) => {
+    visited.current.add(name);
+    setActiveCategory(name);
   }, []);
 
-  const activeSectionName =
-    menu.categories[activeSectionIdx]?.name ?? menu.categories[0]?.name ?? "";
+  // ── Auto-navigate to the first category that contains a search match ──
+  useEffect(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return;
 
-  const clearSearch = () => {
-    setSearchQuery("");
-    setSearchActive(false);
-  };
+    const matchingCat = menu.categories.find((cat) =>
+      cat.items.some(
+        (item) =>
+          item.name.toLowerCase().includes(q) ||
+          (item.description?.toLowerCase().includes(q) ?? false)
+      )
+    );
+
+    if (matchingCat && matchingCat.name !== activeCategory) {
+      handleCategorySelect(matchingCat.name);
+      // small delay so carousel useEffect fires after state settles
+    }
+  }, [searchQuery]); // eslint-disable-line
+
+  const hasBg = !!theme.bgImage;
 
   return (
-    <div className={`w-full h-svh flex flex-col relative overflow-hidden ${theme.bg}`}>
+    <div className="w-full h-svh flex flex-row overflow-hidden relative">
 
-      {/* Background image */}
-      <Image
-        src={theme.bgImage}
-        alt="background"
-        fill
-        priority
-        className="z-0 object-cover scale-110 -translate-y-[4%]"
-      />
-      {/* Overlay for readability */}
-      <div className="absolute inset-0 z-[1] bg-black/30" />
+      {/* Background */}
+      {hasBg && (
+        <Image src={theme.bgImage} alt="background" fill priority className="z-0 object-cover brightness-50" />
+      )}
+      {!hasBg && <div className="absolute inset-0 z-0" style={{ background: "#07151f" }} />}
+      <div className="absolute inset-0 z-[1] bg-black/25" />
 
-      {/* Header */}
-      <header className="relative z-10 flex items-center justify-between px-6 pt-[18px] pb-[10px] flex-shrink-0 gap-4">
-        {/* Logo */}
-        <Image
-          src="/english-logo.png"
-          alt="Kasoori"
-          width={500}
-          height={500}
-          className={`h-[80px] w-auto flex-shrink-0 ${theme.logoFilter}`}
+      {/* ── Main content column ─────────────────────────────────────────── */}
+      <div
+        className="relative z-10 flex flex-col overflow-hidden transition-all duration-300 ease-in-out"
+        style={{ flex: cartOpen ? "1 1 0%" : "1 1 100%" }}
+      >
+        {/* Header */}
+        <header className="flex items-center justify-between px-8 py-4 flex-shrink-0 gap-4">
+          <div className="w-[200px]">
+            <Image
+            src="/english-logo.png"
+            alt="Kasoori"
+            width={500}
+            height={500}
+            className={`h-[72px] w-auto flex-shrink-0 ${theme.logoFilter} brightness-150`}
+          />
+          </div>
+
+          {/* Search bar */}
+          <div
+            className="flex-1 max-w-[600px] flex items-center gap-2 rounded-full px-4 py-2 transition-all duration-200"
+            style={{
+              background: "rgba(239,236,227,0.10)",
+              border:     "1px solid rgba(239,236,227,0.22)",
+            }}
+          >
+            <Search size={14} style={{ color: theme.accentHex }} className="flex-shrink-0" />
+            <input
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search the dish you want to try…"
+              className="flex-1 bg-transparent outline-none font-cormorant text-[14px] text-white/80 placeholder-white/30"
+            />
+            {searchQuery && (
+              <button onClick={() => setSearchQuery("")} className="text-white/40 hover:text-white/70 cursor-pointer">
+                <X size={14} />
+              </button>
+            )}
+          </div>
+
+          {/* Right */}
+          <div className="flex items-center gap-3 flex-shrink-0 w-[200px]">
+            <LanguageButton />
+            <button
+              onClick={() => setCartOpen((o) => !o)}
+              className="relative p-2 cursor-pointer hover:opacity-80 transition-opacity"
+              style={{ color: theme.accentHex }}
+            >
+              <ShoppingBag size={20} />
+              {totalCount > 0 && (
+                <span
+                  className="absolute -top-0.5 -right-0.5 w-[18px] h-[18px] rounded-full text-[9px] font-bold flex items-center justify-center font-cinzel text-black"
+                  style={{ background: theme.accentHex }}
+                >
+                  {totalCount}
+                </span>
+              )}
+            </button>
+          </div>
+        </header>
+
+        {/* Venue label */}
+        <div className="flex items-center justify-center gap-3 flex-shrink-0 pb-1">
+          <div className="h-px w-16 opacity-60" style={{ background: `linear-gradient(to left, ${theme.accentHex}, transparent)` }} />
+          <span className={`text-[10px] opacity-60 ${theme.tagLine}`}>◆</span>
+          <span className={`font-dm-serif text-[15px] tracking-[0.2em] uppercase ${theme.accentText}`}>
+            {menu.label}
+          </span>
+          <span className={`text-[10px] opacity-60 ${theme.tagLine}`}>◆</span>
+          <div className="h-px w-16 opacity-60" style={{ background: `linear-gradient(to right, ${theme.accentHex}, transparent)` }} />
+        </div>
+
+        {/* Category pill carousel — activeId drives its own scroll internally */}
+        <CategoryPillCarousel
+          categories={menu.categories}
+          activeId={activeCategory}
+          onSelect={handleCategorySelect}
+          theme={theme}
         />
 
-        {/* Centre: venue label */}
-        {!searchActive && (
-          <div className="flex items-center gap-3 whitespace-nowrap flex-1 justify-center">
-            <div
-              className="flex-1 h-[1px] max-w-[100px]"
-              style={{ background: `linear-gradient(to left, ${theme.accentHex}, transparent)` }}
-            />
-            <span className={`text-[11px] ${theme.tagLine}`}>◆</span>
-            <span className={`font-cinzel text-[15px] tracking-[0.18em] uppercase ${theme.accentText}`}>
-              {menu.label}
-            </span>
-            <span className={`text-[11px] ${theme.tagLine}`}>◆</span>
-            <div
-              className="flex-1 h-[1px] max-w-[100px]"
-              style={{ background: `linear-gradient(to right, ${theme.accentHex}, transparent)` }}
-            />
-          </div>
-        )}
+        {/* Parchment content area */}
+        <div
+          className="relative flex-1 mx-5 mb-5 rounded-2xl overflow-hidden flex flex-col"
+          style={{
+            background:     "rgba(238, 224, 181, 0.82)",
+            border:         `2px solid ${theme.accentHex}60`,
+            backdropFilter: "blur(10px)",
+          }}
+        >
+          <div className="flex-1 relative overflow-hidden">
+            {menu.categories.map((cat) => {
+              const isActive   = cat.name === activeCategory;
+              const wasVisited = visited.current.has(cat.name);
+              if (!wasVisited && !isActive) return null;
 
-        {/* Search bar (expands when active) */}
-        {searchActive && (
-          <div className="flex-1 flex items-center gap-2 relative">
-            <div
-              className="flex-1 flex items-center gap-2 rounded-[10px] px-3 py-2"
-              style={{ background: "rgba(255,255,255,0.08)", border: `1px solid ${theme.accentHex}30` }}
-            >
-              <Search size={14} style={{ color: theme.accentHex }} className="flex-shrink-0" />
-              <input
-                autoFocus
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search dishes…"
-                className="flex-1 bg-transparent outline-none font-cormorant text-[14px] text-white/90 placeholder-white/30"
-              />
-              {searchQuery && (
-                <button onClick={() => setSearchQuery("")} className="text-white/40 hover:text-white/70 cursor-pointer">
-                  <X size={14} />
-                </button>
-              )}
-            </div>
-            <button
-              onClick={clearSearch}
-              className="font-cinzel text-[11px] tracking-wider cursor-pointer hover:opacity-80 transition-opacity flex-shrink-0"
-              style={{ color: theme.accentHex }}
-            >
-              Cancel
-            </button>
+              return (
+                <div
+                  key={cat.name}
+                  className="absolute inset-0 overflow-y-auto"
+                  style={{
+                    visibility:    isActive ? "visible" : "hidden",
+                    pointerEvents: isActive ? "auto"    : "none",
+                  }}
+                >
+                  <MenuItemsList
+                    section={cat}
+                    theme={theme}
+                    searchQuery={searchQuery}
+                  />
+                  <div className="h-6" />
+                </div>
+              );
+            })}
           </div>
-        )}
-
-        {/* Right: search + language + cart */}
-        <div className="flex items-center gap-3 flex-shrink-0">
-          {!searchActive && (
-            <button
-              onClick={() => setSearchActive(true)}
-              className="p-2 rounded-full cursor-pointer hover:opacity-80 transition-opacity"
-              style={{ color: theme.accentHex }}
-            >
-              <Search size={18} />
-            </button>
-          )}
-          <LanguageButton />
-          {/* Cart button */}
-          <button
-            onClick={() => setCartOpen(true)}
-            className="relative p-2 rounded-full cursor-pointer hover:opacity-80 transition-opacity"
-            style={{ color: theme.accentHex }}
-          >
-            <ShoppingBag size={18} />
-            {totalCount > 0 && (
-              <span
-                className="absolute -top-0.5 -right-0.5 w-4 h-4 rounded-full text-[10px] font-bold flex items-center justify-center font-cinzel text-black"
-                style={{ background: theme.accentHex }}
-              >
-                {totalCount}
-              </span>
-            )}
-          </button>
         </div>
-      </header>
 
-      {/* Active section heading */}
-      <div className="relative z-10 text-center flex-shrink-0 mb-1">
-        {searchQuery ? (
-          <p className={`font-cinzel text-[12px] tracking-[0.12em] uppercase ${theme.accentText} opacity-70`}>
-            Results for &ldquo;{searchQuery}&rdquo;
-          </p>
-        ) : (
-          <h1 className={`font-yatra text-[26px] font-semibold tracking-[0.05em] uppercase ${theme.headerText}`}>
-            {activeSectionName}
-          </h1>
+        {/* Footer */}
+        {totalCount > 0 && (
+          <div className="flex-shrink-0 pb-4 -mt-3 text-center">
+            <button
+              onClick={() => setCartOpen(true)}
+              className="font-cinzel text-[10px] tracking-[0.12em] cursor-pointer hover:opacity-80 transition-opacity"
+              style={{ color: theme.accentHex }}
+            >
+              {totalCount} item{totalCount !== 1 ? "s" : ""} selected — tap to review
+            </button>
+          </div>
         )}
       </div>
 
-      {/* Carousel */}
-      <MenuCarouselTrack
-        sections={menu.categories}
-        theme={theme}
-        onActiveChange={handleActiveChange}
-        searchQuery={searchQuery}
-      />
-
-      {/* Footer */}
-      <footer className="relative z-10 text-center pb-[14px] flex-shrink-0">
-        {totalCount > 0 ? (
-          <button
-            onClick={() => setCartOpen(true)}
-            className="font-cinzel text-[10px] tracking-[0.1em] cursor-pointer hover:opacity-80 transition-opacity"
-            style={{ color: theme.accentHex }}
-          >
-            {totalCount} item{totalCount !== 1 ? "s" : ""} selected — tap to review
-          </button>
-        ) : (
-          <p className={`font-cinzel text-[10px] tracking-[0.1em] ${theme.accentText}`}>
-            Tap a dish to add it · Show your server to order
-          </p>
-        )}
-      </footer>
-
-      {/* Cart drawer */}
-      <CartDrawer open={cartOpen} onClose={() => setCartOpen(false)} theme={theme} />
+      {/* ── Cart panel ──────────────────────────────────────────────────── */}
+      <div
+        className="relative z-10 flex-shrink-0 transition-all duration-300 ease-in-out overflow-hidden"
+        style={{ width: cartOpen ? "360px" : "0px", opacity: cartOpen ? 1 : 0 }}
+      >
+        <div className="w-[360px] h-full">
+          <CartDrawer open={cartOpen} onClose={() => setCartOpen(false)} theme={theme} inline />
+        </div>
+      </div>
     </div>
   );
 }

@@ -1,158 +1,116 @@
-"use client";
+import LanguageButton from '@/components/ui/LanguageButton'
+import Image from 'next/image'
 
-import { useRef, useState, useCallback } from "react";
 
-const cards = [
-  { id: 1, color: "#1a1108" },
-  { id: 2, color: "#0b1e2d" },
-  { id: 3, color: "#1c1810" },
-  { id: 4, color: "#12111a" },
-  { id: 5, color: "#0d1a0d" },
-];
-
-const CARD_W = 340;
-const GAP    = 24;
-const STEP   = CARD_W + GAP;
-
-export default function Page() {
-  const trackRef            = useRef<HTMLDivElement>(null);
-  const [active, setActive] = useState(0);
-  // per-card scale derived from scroll position (0–1, 1 = fully active)
-  const [scales, setScales] = useState<number[]>(cards.map((_, i) => i === 0 ? 1 : 0.82));
-
-  const onScroll = useCallback(() => {
-    const el = trackRef.current;
-    if (!el) return;
-    const scrollLeft = el.scrollLeft;
-    const nearest    = Math.round(scrollLeft / STEP);
-    setActive(nearest);
-
-    // compute a continuous scale for each card based on distance from scroll center
-    const newScales = cards.map((_, i) => {
-      const dist = Math.abs(scrollLeft / STEP - i); // 0 = centered, 1 = one card away
-      const scale = 1 - Math.min(dist, 1) * 0.18;   // range: 0.82 → 1.0
-      return Math.max(0.82, scale);
-    });
-    setScales(newScales);
-  }, []);
-
-  const scrollTo = (index: number) => {
-    const clamped = Math.max(0, Math.min(index, cards.length - 1));
-    trackRef.current?.scrollTo({ left: clamped * STEP, behavior: "smooth" });
-  };
-
+const page = () => {
   return (
-    <div style={{ width: "100%", height: "100svh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", backgroundColor: "#111", overflow: "hidden", gap: 32 }}>
-      <style>{`.track::-webkit-scrollbar { display: none; }`}</style>
+    <div className='h-screen w-screen overflow-hidden flex flex-col'>
 
-      {/* Track */}
-      <div
-        ref={trackRef}
-        className="track"
-        onScroll={onScroll}
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: GAP,
-          overflowX: "scroll",
-          scrollSnapType: "x mandatory",
-          WebkitOverflowScrolling: "touch",
-          scrollbarWidth: "none",
-          width: "100%",
-          padding: `0 calc(50% - ${CARD_W / 2}px)`,
-          cursor: "grab",
-        }}
-      >
-        {cards.map((card, i) => (
-          <div
-            key={card.id}
-            onClick={() => scrollTo(i)}
-            style={{
-              scrollSnapAlign: "center",
-              flexShrink: 0,
-              width: CARD_W,
-              height: 480,
-              borderRadius: 24,
-              backgroundColor: card.color,
-              border: `1px solid ${i === active ? "#ffffff55" : "#ffffff18"}`,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              fontSize: 64,
-              color: i === active ? "#ffffff66" : "#ffffff22",
-              fontWeight: 700,
-              userSelect: "none",
-              transform: `scale(${scales[i]})`,
-              opacity: 0.4 + scales[i] * 0.6,
-              // no transition here — updates continuously while scrolling
-            }}
-          >
-            {card.id}
-          </div>
-        ))}
+      {/* bg Image */}
+      <Image
+        src='/bg-restaurant-green.png'
+        alt='bg'
+        height={2000}
+        width={2000}
+        loading='eager'
+        className='absolute h-full w-full object-cover -z-10 brightness-50'
+      />
+
+      <div className='w-full flex items-center justify-between px-20 py-5'>
+        <Image
+          src='/english-logo.png'
+          alt='logo'
+          height={50}
+          width={50}
+          className='h-20 w-fit brightness-150'
+        />
+
+        <div className="flex items-center w-full max-w-[600px] border border-[#e9d087]/50 bg-[#eee0b5d0] rounded-full px-4 py-1 shadow-sm focus-within:border-[#AA771C] focus-within:shadow-md transition-all duration-300 mx-auto">
+        {/* Search Glass Visual Anchor */}
+        <svg xmlns="http://w3.org" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="#AA771C" className="w-5 h-5 mr-3 flex-shrink-0 opacity-70">
+          <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
+        </svg>
+
+        {/* Search Input Field */}
+        <input 
+          type="text" 
+          className="bg-transparent w-full font-cormorant text-lg text-gray-950 placeholder-gray-700 focus:outline-none" 
+          placeholder="Search what you are craving for..." 
+        />
       </div>
 
-      {/* Arrows + dots row — fixed height so dots never move */}
-      <div style={{ display: "flex", alignItems: "center", gap: 24, height: 32 }}>
-        {/* Left arrow */}
-        <button
-          onClick={() => scrollTo(active - 1)}
-          disabled={active === 0}
-          style={{
-            background: "none",
-            border: "none",
-            color: active === 0 ? "#ffffff22" : "#ffffff",
-            fontSize: 28,
-            cursor: active === 0 ? "not-allowed" : "pointer",
-            lineHeight: 1,
-            padding: 0,
-            transition: "color 0.2s",
-          }}
-        >
-          ‹
-        </button>
+        <LanguageButton/>
 
-        {/* Dots — fixed width container so layout never shifts */}
-        <div style={{ display: "flex", gap: 8, alignItems: "center", width: cards.length * 8 + (cards.length - 1) * 8 + 16 }}>
-          {cards.map((_, i) => (
-            <button
-              key={i}
-              onClick={() => scrollTo(i)}
-              style={{
-                width: 8,
-                height: 8,
-                borderRadius: 999,
-                backgroundColor: i === active ? "#ffffff" : "#ffffff44",
-                border: "none",
-                cursor: "pointer",
-                padding: 0,
-                outline: i === active ? "2px solid #ffffff88" : "none",
-                outlineOffset: 2,
-                transition: "background-color 0.3s, outline 0.3s",
-                flexShrink: 0,
-              }}
-            />
-          ))}
+      </div>
+
+      {/* this will be like the menucards we made that will scroll sideways and lock and the middle one will look bigger */}
+      <div className='flex w-full gap-5 justify-center'>
+        <div className='rounded-2xl border bg-amber-100/70 border-[#e9d087] text-5xl font-yatra min-w-[450px] text-center py-10 text-transparent bg-clip-text bg-gradient-to-r from-[#B38728] via-[#FBF5B7] to-[#AA771C] font-bold'>
+          Starters
+        </div>
+        <div className='rounded-2xl border bg-amber-100/70 border-[#e9d087] text-5xl font-yatra min-w-[450px] text-center py-10 text-transparent bg-clip-text bg-gradient-to-r from-[#B38728] via-[#FBF5B7] to-[#AA771C] font-bold'>
+          Appetizers
         </div>
 
-        {/* Right arrow */}
-        <button
-          onClick={() => scrollTo(active + 1)}
-          disabled={active === cards.length - 1}
-          style={{
-            background: "none",
-            border: "none",
-            color: active === cards.length - 1 ? "#ffffff22" : "#ffffff",
-            fontSize: 28,
-            cursor: active === cards.length - 1 ? "not-allowed" : "pointer",
-            lineHeight: 1,
-            padding: 0,
-            transition: "color 0.2s",
-          }}
-        >
-          ›
-        </button>
+        {/* <div className='rounded-2xl border bg-amber-100/80 border-[#e9d087] text-5xl text-[#977319] font-yatra min-w-[450px] text-center py-10'>
+          Main Course
+        </div> */}
+        <div className='rounded-2xl border bg-amber-100/70 border-[#e9d087] text-5xl font-yatra min-w-[450px] text-center py-10 text-transparent bg-clip-text bg-gradient-to-r from-[#B38728] via-[#FBF5B7] to-[#AA771C] font-bold'>
+          Main Course
+        </div>
+        <div className='rounded-2xl border bg-amber-100/70 border-[#e9d087] text-5xl font-yatra min-w-[450px] text-center py-10 text-transparent bg-clip-text bg-gradient-to-r from-[#B38728] via-[#FBF5B7] to-[#AA771C] font-bold'>
+          Deserts
+        </div>
+        <div className='rounded-2xl border bg-amber-100/70 border-[#e9d087] text-5xl font-yatra min-w-[450px] text-center py-10 text-transparent bg-clip-text bg-gradient-to-r from-[#B38728] via-[#FBF5B7] to-[#AA771C] font-bold'>
+          Breakfast
+        </div>
+      </div>
+
+      {/* Section wise menu container , the menu of the selected section like starter main course will load here also the menu item design*/}
+      <div className='bg-[#eee0b5d0] border-2 border-[#e9d087] flex-1 m-5 rounded-2xl p-5'>
+        <div className="bg-[#fdfbf7] border border-[#e9d087]/60 shadow-md hover:shadow-lg transition-all duration-300 max-w-[500px] p-5 rounded-2xl flex gap-4 relative overflow-hidden group m-2">
+  {/* Veg/Non-Veg Indicator (Re-positioned relative to the card container) */}
+  <span className="absolute top-4 left-4 z-10 h-2 w-2 rounded-full bg-green-600 outline outline-2 outline-green-600 outline-offset-2"></span>
+  
+  {/* Image Container */}
+  <div className="h-24 w-24 min-w-[96px] rounded-xl overflow-hidden shadow-inner bg-amber-50">
+    <Image
+      src="/paneer-butter-masala.jpg"
+      alt="Paneer Butter Masala"
+      height={96}
+      width={96}
+      className="h-full w-full object-cover group-hover:scale-105 transition-transform duration-300"
+    />
+  </div>
+
+  {/* Item Details */}
+  <div className="flex flex-col flex-1 min-w-0 justify-center">
+    <h3 className="font-cormorant text-2xl font-bold text-gray-800 leading-snug truncate">
+      Paneer Butter Masala
+    </h3>
+    <p className="font-cormorant text-xs text-gray-500 mt-1 leading-relaxed line-clamp-2">
+      Soft paneer cubes simmered in a smooth, mildly sweet, and spiced tomato-onion gravy loaded with butter and cream.
+    </p>
+  </div>
+
+  {/* Action / Price Column */}
+  <div className="flex flex-col justify-between items-end min-w-[90px]">
+    <span className="font-dm-serif text-xl font-semibold text-[#AA771C]">
+      450/-
+    </span>
+    
+    {/* Elegant Stepper Counter */}
+    <div className="flex items-center border border-[#e9d087] rounded-lg overflow-hidden bg-white shadow-sm text-sm">
+      <button className="px-2.5 py-1 text-gray-400 hover:bg-amber-50 active:bg-amber-100 transition-colors font-semibold">-</button>
+      <span className="px-2.5 py-1 font-sans font-bold text-green-700 bg-amber-50/50">2</span>
+      <button className="px-2.5 py-1 text-gray-400 hover:bg-amber-50 active:bg-amber-100 transition-colors font-semibold">+</button>
+    </div>
+  </div>
+</div>
+
       </div>
     </div>
-  );
+  )
 }
+
+export default page

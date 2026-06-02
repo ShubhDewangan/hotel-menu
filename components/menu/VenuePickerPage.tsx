@@ -11,7 +11,7 @@ const venues = [
     label:       "Restaurant",
     sublabel:    "Main dining hall",
     menuLabel:   "Restaurant Menu",
-    bgImage:     "/image.png",
+    bgImage:     "/bg-restaurant.png",
     accentHex:   "#d4af6a",
     // Tailwind classes used on the card accent elements
     accentText:  "text-[#d4af6a]",

@@ -53,3 +53,36 @@ body {
 .snap-scroll::-webkit-scrollbar {
   display: none;
 }
+
+/* 1. Standard Fallback (Mainly for Firefox) */
+.custom-scrollbar {
+  scrollbar-width: thin;
+  /* Formula: [Thumb Color] [Track Color] */
+  scrollbar-color: #d4af37 #1a3020;
+}
+
+/* 2. Chromium Engine Styles (Brave, Chrome, Edge, Safari) */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+  display: block !important;
+}
+
+/* The background track: Rich Forest Green */
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: #1a3020 !important;
+  border-radius: 9999px;
+}
+
+/* The draggable thumb: Classic Gold */
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: #d4af37 !important;
+  border-radius: 9999px;
+  /* This creates a padding effect matching the track color */
+  border: 2px solid #1a3020; 
+}
+
+/* Hover state: Brighter Metallic Gold */
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #f3cd44 !important;
+}
