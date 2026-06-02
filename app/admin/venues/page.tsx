@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
 
 import { useEffect, useState, useTransition } from "react";
@@ -9,6 +10,7 @@ import {
   getQRForTable, generateQRForTable, uploadQRImage,
 } from "@/lib/actions/admin.actions";
 import type { VenueDoc, TableDoc, QRCodeDoc } from "@/types/appwrite";
+import Image from 'next/image'
 
 type TableWithQR    = TableDoc & { qr: QRCodeDoc | null; generating: boolean };
 type VenueWithTables = VenueDoc & { tables: TableWithQR[] | null; loading: boolean };
@@ -27,6 +29,8 @@ export default function VenuesPage() {
   const [showAddVenue, setShowAdd]   = useState(false);
   const [showAddTable, setShowTable] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+  const [showQR, setShowQR]          = useState<boolean>(false)
+  const [QR, sendQR]                 = useState<string | null>(null)
 
   useEffect(() => {
     listVenues().then((vs) => {
@@ -34,6 +38,7 @@ export default function VenuesPage() {
       setLoading(false);
     });
   }, []);
+
 
   const handleExpand = async (venueId: string) => {
     if (expandedVenue === venueId) { setExpanded(null); return; }
@@ -266,11 +271,20 @@ export default function VenuesPage() {
                             </div>
                           </div>
 
-                          {/* QR preview thumbnail */}
                           {hasQR && table.qr?.qr_image_url && (
-                            <div className="w-9 h-9 rounded-lg overflow-hidden bg-white flex-shrink-0 border border-white/10">
+                            <div
+                              className="w-9 h-9 rounded-lg overflow-hidden bg-white flex-shrink-0 border border-white/10 cursor-pointer"
+                              onClick={() => {
+                                sendQR(table.qr!.qr_image_url);
+                                setShowQR(true);
+                              }}
+                            >
                               {/* eslint-disable-next-line @next/next/no-img-element */}
-                              <img src={table.qr.qr_image_url} alt="QR" className="max-h-[100px] h-[100px]" />
+                              <img
+                                src={table.qr.qr_image_url}
+                                alt="QR"
+                                className="w-full h-full object-cover"
+                              />
                             </div>
                           )}
 
@@ -348,6 +362,16 @@ export default function VenuesPage() {
           }}
         />
       )}
+
+      {showQR && QR && (
+        <QRdisplay
+          QRcode={QR}
+          onClose={() => {
+            setShowQR(false);
+            sendQR(null);
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -422,6 +446,37 @@ function AddVenueModal({ onClose, onAdd }: {
           </button>
           <button onClick={onClose} className="px-4 text-white/25 hover:text-white/50 text-[13px] cursor-pointer">Cancel</button>
         </div>
+      </div>
+    </div>
+  );
+}
+
+function QRdisplay({ onClose, QRcode }: {
+  onClose: () => void;
+  QRcode: string;
+}) {
+  return (
+    <div
+      className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center"
+      onClick={onClose}           // click backdrop to dismiss
+    >
+      <div
+        className="relative bg-white rounded-2xl p-4 shadow-2xl"
+        onClick={(e) => e.stopPropagation()}   // don't close when clicking the QR itself
+      >
+        <Image
+          src={QRcode}
+          alt="QR Code"
+          height={500}
+          width={500}
+          className="rounded-xl"
+        />
+        <button
+          onClick={onClose}
+          className="absolute top-3 right-3 w-7 h-7 flex items-center justify-center rounded-full bg-black/10 text-black/50 hover:bg-black/20 hover:text-black transition-all text-[13px] cursor-pointer"
+        >
+          ✕
+        </button>
       </div>
     </div>
   );

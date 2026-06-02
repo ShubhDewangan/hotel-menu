@@ -67,7 +67,7 @@ export default function MenuItemsList({ section, theme, searchQuery = "" }: Menu
             />
             
             {/* Image Container */}
-            {item.image ? (
+            {/* {item.image ? (
               <div className="h-24 w-24 min-w-[96px] rounded-xl overflow-hidden shadow-inner bg-amber-50 relative">
                 <Image
                   src={item.image}
@@ -77,15 +77,15 @@ export default function MenuItemsList({ section, theme, searchQuery = "" }: Menu
                   className="h-full w-full object-cover group-hover:scale-105 transition-transform duration-300"
                 />
               </div>
-            ) : (
-              /* Premium Fallback Placeholder if image missing */
+            ) : ( */}
+               {/* Premium Fallback Placeholder if image missing  */}
               <div
                 className="h-24 w-24 min-w-[96px] rounded-xl flex items-center justify-center shadow-inner"
                 style={{ background: `${theme.accentHex}12`, border: `1px solid ${theme.accentHex}20` }}
               >
                 <span className="text-2xl opacity-30 text-[#95773a]">◈</span>
               </div>
-            )}
+             {/* )} */}
 
             {/* Item Details Column */}
             <div className="flex flex-col flex-1 min-w-0 justify-center">
