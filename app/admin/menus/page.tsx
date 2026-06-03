@@ -10,6 +10,7 @@ import {
   createMenuItem, updateMenuItem, toggleItemAvailability, deleteMenuItem,
 } from "@/lib/actions/admin.actions";
 import type { MenuDoc, MenuCategoryDoc, MenuItemDoc } from "@/types/appwrite";
+import { Suspense } from 'react'
 
 type NewMenuItemData = Omit<MenuItemDoc, "$id" | "$collectionId" | "$databaseId" | "$createdAt" | "$updatedAt" | "$permissions" | "$sequence">;
 type ItemsMap = Record<string, MenuItemDoc[] | null>;
@@ -21,7 +22,7 @@ const ACCENT: Record<string, string> = {
   event:      "#b07fd4",
 };
 
-export default function MenusPage() {
+function MenusContent() {
   const searchParams  = useSearchParams();
   const menuIdFromUrl = searchParams.get("menuId");
 
@@ -122,14 +123,7 @@ export default function MenusPage() {
     setEditingItem(null);
   };
 
-  if (loading) return (
-    <div className="flex-1 flex items-center justify-center">
-      <div className="flex items-center gap-3 text-white/20">
-        <Loader2 size={18} className="animate-spin" />
-        <span className="text-[13px]">Loading…</span>
-      </div>
-    </div>
-  );
+  if (loading) return <LoadingSpinner/>
 
   if (menus.length === 0) return (
     <div className="flex-1 flex items-center justify-center">
@@ -413,4 +407,23 @@ function EditItemModal({ item, accent, onClose, onSave }: {
       </div>
     </div>
   );
+}
+
+function LoadingSpinner() {
+  return (
+    <div className="flex-1 flex items-center justify-center">
+      <div className="flex items-center gap-3 text-white/20">
+        <Loader2 size={18} className="animate-spin" />
+        <span className="text-[13px]">Loading…</span>
+      </div>
+    </div>
+  );
+}
+
+export default function MenusPage() {
+  return (
+    <Suspense fallback={<LoadingSpinner/>}>
+      <MenusContent/>
+    </Suspense>
+  )
 }
