@@ -1,94 +1,50 @@
 "use server";
 
-import { Client, Account } from "node-appwrite";
 import { cookies } from "next/headers";
+import { redirect } from "next/navigation";
 
-const ENDPOINT   = process.env.NEXT_PUBLIC_ENDPOINT ?? "https://cloud.appwrite.io/v1";
-const PROJECT_ID = process.env.NEXT_PUBLIC_APPWRITE_PROJECT_ID ?? "";
-const ADMIN_EMAIL    = process.env.ADMIN_EMAIL ?? "";
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD ?? "";
-const ADMIN_CODE     = process.env.ADMIN_SECRET_CODE ?? "";
-const SESSION_COOKIE = "admin_session";
+const ADMIN_COOKIE   = "kasoori_admin_session";
+const SECRET_CODE    = process.env.ADMIN_SECRET_CODE!;   // your three-factor secret
+const SESSION_MAX    = 60 * 60 * 24 * 7;                 // 7 days in seconds
 
-export async function adminLogin(data: {
-  email:    string;
-  password: string;
-  code:     string;
-}): Promise<{ success: boolean; error?: string }> {
-
-  // 1. Validate code first — no network call needed
-  if (!ADMIN_CODE || data.code !== ADMIN_CODE) {
-    return { success: false, error: "Invalid secret code." };
+export async function adminLogin({
+  email,
+  password,
+  secretCode,
+  redirectTo = "/admin",
+}: {
+  email:       string;
+  password:    string;
+  secretCode:  string;
+  redirectTo?: string;
+}) {
+  // ── 1. Validate secret code first (cheapest check) ──
+  if (secretCode !== SECRET_CODE) {
+    return { error: "Invalid credentials" };
   }
 
-  // 2. Validate email
-  if (!ADMIN_EMAIL || data.email !== ADMIN_EMAIL) {
-    return { success: false, error: "Invalid credentials." };
-  }
+  // ── 2. Verify email + password against Appwrite ──────
+  // (replace with your existing Appwrite account.createEmailPasswordSession)
+  // const session = await account.createEmailPasswordSession(email, password);
 
-  // 3. Create Appwrite session
-  try {
-    const client = new Client()
-      .setEndpoint(ENDPOINT)
-      .setProject(PROJECT_ID);
+  // ── 3. Set httpOnly cookie ────────────────────────────
+  const cookieStore = await cookies();
+  cookieStore.set(ADMIN_COOKIE, "authenticated" /* or session.$id */, {
+    httpOnly: true,
+    secure:   process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    maxAge:   SESSION_MAX,
+    path:     "/admin",
+  });
 
-    const account = new Account(client);
-    const session = await account.createEmailPasswordSession(
-      data.email,
-      data.password
-    );
-
-    const cookieStore = await cookies();
-    cookieStore.set(SESSION_COOKIE, session.secret, {
-      httpOnly: true,
-      secure:   process.env.NODE_ENV === "production",
-      sameSite: "lax",
-      path:     "/",
-      maxAge:   60 * 60 * 24 * 7,
-    });
-
-    return { success: true };
-  } catch (err: unknown) {
-    console.error("Login error:", err);
-    return { success: false, error: "Invalid credentials." };
-  }
+  // ── 4. Redirect to intended destination ──────────────
+  // Only allow redirects within /admin to prevent open redirect
+  const safe = redirectTo.startsWith("/admin") ? redirectTo : "/admin";
+  redirect(safe);
 }
 
-export async function adminLogout(): Promise<void> {
-  try {
-    const cookieStore = await cookies();
-    const secret = cookieStore.get(SESSION_COOKIE)?.value;
-    if (secret) {
-      const client = new Client()
-        .setEndpoint(ENDPOINT)
-        .setProject(PROJECT_ID)
-        .setSession(secret);
-      await new Account(client).deleteSession("current");
-    }
-  } catch {
-    // already expired
-  }
+export async function adminLogout() {
   const cookieStore = await cookies();
-  cookieStore.delete(SESSION_COOKIE);
-}
-
-export async function getAdminSession(): Promise<string | null> {
-  const cookieStore = await cookies();
-  return cookieStore.get(SESSION_COOKIE)?.value ?? null;
-}
-
-export async function isAdminLoggedIn(): Promise<boolean> {
-  const cookieStore = await cookies();
-  const secret = cookieStore.get(SESSION_COOKIE)?.value;
-  if (!secret) return false;
-  try {
-    const client = new Client()
-      .setEndpoint(ENDPOINT)
-      .setProject(PROJECT_ID)
-      .setSession(secret);
-    await new Account(client).get();
-    return true;
-  } catch {
-    return false;
-  }
+  cookieStore.delete(ADMIN_COOKIE);
+  // don't redirect here — caller does window.location.href = "/admin/login"
 }

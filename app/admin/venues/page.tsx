@@ -2,26 +2,76 @@
 "use client";
 
 import { useEffect, useState, useTransition } from "react";
-import { Plus, ChevronDown, ChevronRight, QrCode, Trash2, ToggleLeft, ToggleRight, Loader2, CheckCircle2, Download, RefreshCw } from "lucide-react";
+import {
+  Plus, ChevronDown, ChevronRight, QrCode, Trash2,
+  ToggleLeft, ToggleRight, Loader2, CheckCircle2,
+  Download, RefreshCw, ImageIcon,
+} from "lucide-react";
 import QRCode from "qrcode";
+import Image from "next/image";
 import {
   listVenues, createVenue, toggleVenueActive, deleteVenue,
   listTablesByVenue, createTable, toggleTableActive, deleteTableWithQR,
   getQRForTable, generateQRForTable, uploadQRImage,
 } from "@/lib/actions/admin.actions";
 import type { VenueDoc, TableDoc, QRCodeDoc } from "@/types/appwrite";
-import Image from 'next/image'
+import {
+  C, PageShell, PageHeader, SectionLabel,
+  inputCls, AccentBtn, PrimaryBtn, Modal, Ring, PageLoader, StatusPill,
+} from "@/shared";
 
-type TableWithQR    = TableDoc & { qr: QRCodeDoc | null; generating: boolean };
+type TableWithQR     = TableDoc & { qr: QRCodeDoc | null; generating: boolean };
 type VenueWithTables = VenueDoc & { tables: TableWithQR[] | null; loading: boolean };
 
 const THEME_COLORS: Record<string, string> = {
   restaurant: "#c9a84c",
-  pool:       "#5bb8d4",
-  lobby:      "#d4af6a",
-  event:      "#b07fd4",
+  pool:       "#3dd6a3",
+  lobby:      "#9b8fd4",
+  event:      "#e07d9a",
+};
+const THEME_LABELS: Record<string, string> = {
+  restaurant: "Restaurant",
+  pool:       "Pool",
+  lobby:      "Lobby Café",
+  event:      "Event Space",
 };
 
+/* ─── QR preview modal ───────────────────────────────── */
+function QRModal({ src, onClose }: { src: string; onClose: () => void }) {
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center"
+      style={{ background: "rgba(10,20,16,0.7)", backdropFilter: "blur(6px)" }}
+      onClick={onClose}
+    >
+      <div
+        className="relative rounded-3xl p-5"
+        onClick={e => e.stopPropagation()}
+        style={{ background: C.card, border: `1px solid ${C.border}`, boxShadow: "0 40px 100px rgba(0,0,0,0.2)" }}
+      >
+        <div className="rounded-2xl overflow-hidden" style={{ border: `1px solid ${C.border}` }}>
+          <Image src={src} alt="QR Code" height={400} width={400} className="block" />
+          <div className='bg-amber-50 h-25 w-25 rounded-xl absolute -translate-x-1/2 -translate-y-1/2 top-1/2 left-1/2'>
+            <div className="flex w-full h-full items-center justify-center">
+              <Image src={'/english-logo.png'} alt="kasoori methi" height={40} width={40} className="h-20 w-fit" />
+            </div>
+          </div>
+        </div>
+        <button
+          onClick={onClose}
+          className="absolute top-3 right-3 w-7 h-7 flex items-center justify-center rounded-full cursor-pointer transition-all"
+          style={{ background: C.bg, border: `1px solid ${C.border}`, color: C.muted }}
+        >
+          ✕
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════
+   MAIN
+═══════════════════════════════════════════════════════ */
 export default function VenuesPage() {
   const [venues, setVenues]          = useState<VenueWithTables[]>([]);
   const [loading, setLoading]        = useState(true);
@@ -29,58 +79,50 @@ export default function VenuesPage() {
   const [showAddVenue, setShowAdd]   = useState(false);
   const [showAddTable, setShowTable] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
-  const [showQR, setShowQR]          = useState<boolean>(false)
-  const [QR, sendQR]                 = useState<string | null>(null)
+  const [showQR, setShowQR]          = useState(false);
+  const [qrSrc, setQrSrc]            = useState<string | null>(null);
 
   useEffect(() => {
-    listVenues().then((vs) => {
-      setVenues(vs.map((v) => ({ ...v, tables: null, loading: false })));
+    listVenues().then(vs => {
+      setVenues(vs.map(v => ({ ...v, tables: null, loading: false })));
       setLoading(false);
     });
   }, []);
 
-
   const handleExpand = async (venueId: string) => {
     if (expandedVenue === venueId) { setExpanded(null); return; }
     setExpanded(venueId);
-    const venue = venues.find((v) => v.$id === venueId);
+    const venue = venues.find(v => v.$id === venueId);
     if (venue?.tables !== null) return;
-
-    setVenues((p) => p.map((v) => v.$id === venueId ? { ...v, loading: true } : v));
+    setVenues(p => p.map(v => v.$id === venueId ? { ...v, loading: true } : v));
     const tables = await listTablesByVenue(venueId);
-
-    // Fetch existing QR for each table
     const tablesWithQR: TableWithQR[] = await Promise.all(
-      tables.map(async (t) => {
-        const qr = await getQRForTable(t.$id);
-        return { ...t, qr, generating: false };
-      })
+      tables.map(async t => ({ ...t, qr: await getQRForTable(t.$id), generating: false }))
     );
-
-    setVenues((p) => p.map((v) => v.$id === venueId ? { ...v, tables: tablesWithQR, loading: false } : v));
+    setVenues(p => p.map(v => v.$id === venueId ? { ...v, tables: tablesWithQR, loading: false } : v));
   };
 
   const handleToggleVenue = (id: string, current: boolean) => {
     startTransition(async () => {
       await toggleVenueActive(id, !current);
-      setVenues((p) => p.map((v) => v.$id === id ? { ...v, is_active: !current } : v));
+      setVenues(p => p.map(v => v.$id === id ? { ...v, is_active: !current } : v));
     });
   };
 
   const handleDeleteVenue = (id: string) => {
-    if (!confirm("Delete this venue and all its tables and QR codes?")) return;
+    if (!confirm("Delete this venue and all its tables?")) return;
     startTransition(async () => {
       await deleteVenue(id);
-      setVenues((p) => p.filter((v) => v.$id !== id));
+      setVenues(p => p.filter(v => v.$id !== id));
     });
   };
 
   const handleToggleTable = (venueId: string, tableId: string, current: boolean) => {
     startTransition(async () => {
       await toggleTableActive(tableId, !current);
-      setVenues((p) => p.map((v) =>
+      setVenues(p => p.map(v =>
         v.$id === venueId
-          ? { ...v, tables: v.tables?.map((t) => t.$id === tableId ? { ...t, is_active: !current } : t) ?? null }
+          ? { ...v, tables: v.tables?.map(t => t.$id === tableId ? { ...t, is_active: !current } : t) ?? null }
           : v
       ));
     });
@@ -90,39 +132,33 @@ export default function VenuesPage() {
     if (!confirm("Delete this table and its QR code?")) return;
     startTransition(async () => {
       await deleteTableWithQR(tableId);
-      setVenues((p) => p.map((v) =>
-        v.$id === venueId ? { ...v, tables: v.tables?.filter((t) => t.$id !== tableId) ?? null } : v
+      setVenues(p => p.map(v =>
+        v.$id === venueId ? { ...v, tables: v.tables?.filter(t => t.$id !== tableId) ?? null } : v
       ));
     });
   };
 
-  // Generate or regenerate QR for a single table
   const handleGenerateQR = async (venueId: string, venueSlug: string, tableId: string, tableNumber: number, regenerate = false) => {
-    // Mark as generating
-    setVenues((p) => p.map((v) =>
+    setVenues(p => p.map(v =>
       v.$id === venueId
-        ? { ...v, tables: v.tables?.map((t) => t.$id === tableId ? { ...t, generating: true } : t) ?? null }
+        ? { ...v, tables: v.tables?.map(t => t.$id === tableId ? { ...t, generating: true } : t) ?? null }
         : v
     ));
-
     try {
       const qrDoc   = await generateQRForTable({ tableId, venueSlug, tableNumber, regenerate });
-      const dataUrl = await QRCode.toDataURL(qrDoc.resolved_url, {
-        width: 512, margin: 2, color: { dark: "#000000", light: "#ffffff" },
-      });
+      const dataUrl = await QRCode.toDataURL(qrDoc.resolved_url, { width: 512, margin: 2, color: { dark: "#000000", light: "#ffffff" } });
       const blob    = await (await fetch(dataUrl)).blob();
       const updated = await uploadQRImage(qrDoc.$id, blob, `${qrDoc.slug}.png`);
-
-      setVenues((p) => p.map((v) =>
+      setVenues(p => p.map(v =>
         v.$id === venueId
-          ? { ...v, tables: v.tables?.map((t) => t.$id === tableId ? { ...t, qr: updated, generating: false } : t) ?? null }
+          ? { ...v, tables: v.tables?.map(t => t.$id === tableId ? { ...t, qr: updated, generating: false } : t) ?? null }
           : v
       ));
     } catch (err) {
       console.error("QR generation failed", err);
-      setVenues((p) => p.map((v) =>
+      setVenues(p => p.map(v =>
         v.$id === venueId
-          ? { ...v, tables: v.tables?.map((t) => t.$id === tableId ? { ...t, generating: false } : t) ?? null }
+          ? { ...v, tables: v.tables?.map(t => t.$id === tableId ? { ...t, generating: false } : t) ?? null }
           : v
       ));
     }
@@ -134,192 +170,255 @@ export default function VenuesPage() {
     a.href = qr.qr_image_url; a.download = `${label}.png`; a.click();
   };
 
-  if (loading) return (
-    <div className="flex-1 flex items-center justify-center">
-      <div className="flex items-center gap-3 text-white/20">
-        <Loader2 size={18} className="animate-spin" />
-        <span className="text-[13px]">Loading…</span>
-      </div>
-    </div>
-  );
+  if (loading) return <PageLoader />;
 
   const totalTables = venues.reduce((s, v) => s + (v.tables?.length ?? 0), 0);
   const totalSeats  = venues.reduce((s, v) => s + (v.tables?.reduce((ts, t) => ts + t.seat_count, 0) ?? 0), 0);
-  const totalQRs    = venues.reduce((s, v) => s + (v.tables?.filter((t) => t.qr?.qr_image_url).length ?? 0), 0);
+  const totalQRs    = venues.reduce((s, v) => s + (v.tables?.filter(t => t.qr?.qr_image_url).length ?? 0), 0);
 
   return (
-    <div className="flex-1 flex flex-col min-h-0 p-6 overflow-y-auto">
+    <PageShell>
+      <PageHeader
+        eyebrow="Management"
+        title="Venues & Tables"
+        sub="Manage venues, tables and generate QR codes"
+        action={
+          <PrimaryBtn onClick={() => setShowAdd(true)}>
+            <Plus size={13} /> New Venue
+          </PrimaryBtn>
+        }
+      />
 
-      {/* Header */}
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-[18px] text-white/90 font-medium tracking-wide" style={{ fontFamily: "var(--font-cinzel)" }}>
-            Venues &amp; Tables
-          </h1>
-          <p className="text-[12px] text-white/30 mt-0.5">Manage venues, tables and generate QR codes</p>
-        </div>
-        <button onClick={() => setShowAdd(true)}
-          className="flex items-center gap-2 px-4 py-2 rounded-xl text-[12px] border border-[#c9a84c]/25 bg-[#c9a84c]/08 text-[#c9a84c]/80 hover:bg-[#c9a84c]/15 hover:text-[#c9a84c] transition-all cursor-pointer">
-          <Plus size={14} /> New Venue
-        </button>
-      </div>
-
-      {/* Stats row */}
-      <div className="grid grid-cols-4 gap-3 mb-6">
+      {/* ── Stats ── */}
+      <div className="grid grid-cols-4 gap-3 mb-7">
         {[
-          { label: "Venues",  value: venues.length },
-          { label: "Tables",  value: totalTables },
-          { label: "Seats",   value: totalSeats },
-          { label: "QR Ready", value: totalQRs },
-        ].map((s) => (
-          <div key={s.label} className="bg-white/[0.02] border border-white/[0.05] rounded-xl px-4 py-3">
-            <p className="text-[10px] text-white/25 uppercase tracking-widest mb-1" style={{ fontFamily: "var(--font-cinzel)" }}>{s.label}</p>
-            <p className="text-[22px] text-white/80 font-medium tabular-nums">{s.value}</p>
+          { label: "Venues",   value: venues.length, accent: "#c9a84c" },
+          { label: "Tables",   value: totalTables,   accent: C.orange  },
+          { label: "Seats",    value: totalSeats,    accent: C.teal    },
+          { label: "QR Ready", value: totalQRs,      accent: "#9b8fd4" },
+        ].map(s => (
+          <div
+            key={s.label}
+            className="rounded-2xl px-5 py-4"
+            style={{ background: C.card, border: `1px solid ${C.border}`, boxShadow: "0 1px 3px rgba(0,0,0,0.04)" }}
+          >
+            <p className="text-[10px] uppercase tracking-[0.18em] mb-2" style={{ color: C.muted }}>{s.label}</p>
+            <p className="text-[32px] font-light leading-none" style={{ color: s.accent, fontFamily: "var(--font-cormorant)" }}>
+              {s.value}
+            </p>
           </div>
         ))}
       </div>
 
       {venues.length === 0 && (
-        <div className="flex-1 flex items-center justify-center">
+        <div className="flex-1 flex items-center justify-center py-16">
           <div className="text-center">
-            <p className="text-white/20 text-[13px] mb-3">No venues yet</p>
-            <button onClick={() => setShowAdd(true)}
-              className="px-4 py-2 rounded-xl text-[12px] border border-[#c9a84c]/25 bg-[#c9a84c]/08 text-[#c9a84c]/70 hover:bg-[#c9a84c]/15 cursor-pointer transition-all">
-              Add your first venue
-            </button>
+            <p className="text-[13px] mb-4" style={{ color: C.muted }}>No venues yet</p>
+            <PrimaryBtn onClick={() => setShowAdd(true)}><Plus size={13} /> Add your first venue</PrimaryBtn>
           </div>
         </div>
       )}
 
-      {/* Venue list */}
+      {/* ── Venue list ── */}
       <div className="flex flex-col gap-2">
-        {venues.map((venue) => {
-          const accent = THEME_COLORS[venue.slug] ?? THEME_COLORS.restaurant;
+        {venues.map(venue => {
+          const accent     = THEME_COLORS[venue.slug] ?? THEME_COLORS.restaurant;
           const isExpanded = expandedVenue === venue.$id;
-          return (
-            <div key={venue.$id} className="bg-white/[0.02] border border-white/[0.05] rounded-2xl overflow-hidden">
 
-              {/* Venue row */}
-              <div className="flex items-center gap-4 px-5 py-4 cursor-pointer hover:bg-white/[0.02] transition-colors select-none"
-                onClick={() => handleExpand(venue.$id)}>
-                <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ background: accent, opacity: venue.is_active ? 1 : 0.3 }} />
+          return (
+            <div
+              key={venue.$id}
+              className="rounded-2xl overflow-hidden transition-all"
+              style={{
+                background: C.card,
+                border: `1px solid ${isExpanded ? `${accent}35` : C.border}`,
+                boxShadow: isExpanded ? `0 0 0 1px ${accent}10` : "0 1px 3px rgba(0,0,0,0.04)",
+              }}
+            >
+              {/* ── Venue header row ── */}
+              <div
+                className="flex items-center gap-4 px-5 py-4 cursor-pointer select-none transition-colors hover:bg-[#F9F8F6]"
+                onClick={() => handleExpand(venue.$id)}
+              >
+                {(venue as any).image_url
+                  ? <div className="w-9 h-9 rounded-xl overflow-hidden flex-shrink-0" style={{ border: `1px solid ${accent}30` }}>
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={(venue as any).image_url} alt={venue.name} className="w-full h-full object-cover" />
+                    </div>
+                  : <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ background: venue.is_active ? accent : C.border }} />
+                }
+
                 <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2.5">
-                    <span className="text-[14px] text-white/85 font-medium">{venue.name}</span>
-                    <span className="text-[10px] text-white/25 font-mono">/{venue.slug}</span>
-                    {!venue.is_active && (
-                      <span className="text-[9px] px-1.5 py-0.5 rounded-full border border-red-500/20 text-red-400/50">Inactive</span>
+                  <div className="flex items-center gap-2.5 flex-wrap">
+                    <span
+                      className="text-[14px] font-light"
+                      style={{ color: C.text, fontFamily: "var(--font-cormorant)", letterSpacing: "0.04em" }}
+                    >
+                      {venue.name}
+                    </span>
+                    <span
+                      className="text-[9px] font-mono px-2 py-0.5 rounded-full"
+                      style={{ background: C.bg, border: `1px solid ${C.border}`, color: C.muted }}
+                    >
+                      /{venue.slug}
+                    </span>
+                    {(venue as any).theme && (
+                      <span
+                        className="text-[9px] px-2 py-0.5 rounded-full font-medium"
+                        style={{ background: `${accent}12`, color: accent, border: `1px solid ${accent}22` }}
+                      >
+                        {THEME_LABELS[(venue as any).theme] ?? (venue as any).theme}
+                      </span>
                     )}
+                    {!venue.is_active && <StatusPill label="Inactive" color="red" />}
                   </div>
-                  <p className="text-[11px] text-white/25 mt-0.5 truncate">{venue.description}</p>
+                  {venue.description && (
+                    <p className="text-[11px] mt-0.5 truncate" style={{ color: C.muted }}>{venue.description}</p>
+                  )}
                 </div>
-                <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
-                  <button onClick={() => handleToggleVenue(venue.$id, venue.is_active)} disabled={isPending}
-                    className="text-white/20 hover:text-white/50 cursor-pointer transition-colors p-1">
-                    {venue.is_active ? <ToggleRight size={17} className="text-green-400/60" /> : <ToggleLeft size={17} />}
+
+                <div className="flex items-center gap-1.5" onClick={e => e.stopPropagation()}>
+                  <button
+                    onClick={() => handleToggleVenue(venue.$id, venue.is_active)}
+                    disabled={isPending}
+                    className="cursor-pointer p-1.5 rounded-lg transition-colors hover:bg-[#F4F2EE]"
+                    style={{ color: venue.is_active ? C.green : C.muted }}
+                  >
+                    {venue.is_active ? <ToggleRight size={17} /> : <ToggleLeft size={17} />}
                   </button>
-                  <button onClick={() => handleDeleteVenue(venue.$id)} disabled={isPending}
-                    className="text-white/15 hover:text-red-400/60 cursor-pointer transition-colors p-1">
+                  <button
+                    onClick={() => handleDeleteVenue(venue.$id)}
+                    disabled={isPending}
+                    className="cursor-pointer p-1.5 rounded-lg transition-colors"
+                    style={{ color: C.muted }}
+                    onMouseEnter={e => (e.currentTarget.style.color = C.red)}
+                    onMouseLeave={e => (e.currentTarget.style.color = C.muted)}
+                  >
                     <Trash2 size={13} />
                   </button>
                 </div>
-                <div className="text-white/20 ml-1">
+
+                <span style={{ color: C.muted }}>
                   {venue.loading
-                    ? <Loader2 size={14} className="animate-spin" />
-                    : isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-                </div>
+                    ? <Loader2 size={13} className="animate-spin" />
+                    : isExpanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+                </span>
               </div>
 
-              {/* Tables */}
+              {/* ── Tables panel ── */}
               {isExpanded && venue.tables !== null && (
-                <div className="border-t border-white/[0.05] px-5 py-4">
+                <div className="px-5 py-4" style={{ borderTop: `1px solid ${accent}18` }}>
                   <div className="flex items-center justify-between mb-3">
-                    <p className="text-[10px] text-white/25 uppercase tracking-widest" style={{ fontFamily: "var(--font-cinzel)" }}>
-                      Tables — {venue.tables.length} total · {venue.tables.reduce((s, t) => s + t.seat_count, 0)} seats
-                    </p>
-                    <button onClick={() => setShowTable(venue.$id)}
-                      className="flex items-center gap-1 text-[11px] text-white/30 hover:text-white/60 cursor-pointer transition-colors">
+                    <SectionLabel
+                      label={`${venue.tables.length} ${venue.tables.length === 1 ? "Table" : "Tables"}${venue.tables.length > 0 ? ` · ${venue.tables.reduce((s, t) => s + t.seat_count, 0)} seats` : ""}`}
+                    />
+                    <button
+                      onClick={() => setShowTable(venue.$id)}
+                      className="flex items-center gap-1 text-[11px] cursor-pointer transition-colors"
+                      style={{ color: C.muted }}
+                      onMouseEnter={e => (e.currentTarget.style.color = accent)}
+                      onMouseLeave={e => (e.currentTarget.style.color = C.muted)}
+                    >
                       <Plus size={11} /> Add Table
                     </button>
                   </div>
 
-                  <div className="grid grid-cols-1 gap-1.5">
-                    {venue.tables.map((table) => {
+                  <div className="flex flex-col gap-1.5">
+                    {venue.tables.map(table => {
                       const hasQR = !!table.qr?.qr_image_url;
+                      const qrCoverage = hasQR ? 100 : 0;
                       return (
-                        <div key={table.$id}
-                          className={`flex items-center gap-4 rounded-xl px-4 py-3 border transition-colors ${hasQR ? "bg-white/[0.02] border-white/[0.04]" : "bg-white/[0.01] border-white/[0.03]"}`}>
-
+                        <div
+                          key={table.$id}
+                          className="flex items-center gap-3.5 rounded-xl px-4 py-2.5 transition-all"
+                          style={{ background: C.bg, border: `1px solid ${C.border}` }}
+                        >
                           {/* Table number badge */}
-                          <div className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0"
-                            style={{ background: `${accent}15`, border: `1px solid ${accent}25` }}>
-                            <span className="text-[11px] font-mono font-medium" style={{ color: accent }}>{table.table_number}</span>
+                          <div
+                            className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0"
+                            style={{ background: `${accent}10`, border: `1px solid ${accent}20` }}
+                          >
+                            <span className="text-[11px] font-mono font-semibold" style={{ color: accent }}>
+                              {table.table_number}
+                            </span>
                           </div>
 
                           <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2">
-                              <span className="text-[13px] text-white/70">Table {table.table_number}</span>
-                              <span className="text-[10px] text-white/25">{table.seat_count} seats</span>
-                              {!table.is_active && (
-                                <span className="text-[9px] px-1.5 py-0.5 rounded-full border border-red-500/20 text-red-400/50">Inactive</span>
-                              )}
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="text-[12px] font-medium" style={{ color: C.text }}>
+                                Table {table.table_number}
+                              </span>
+                              <span className="text-[10px]" style={{ color: C.muted }}>{table.seat_count} seats</span>
+                              {!table.is_active && <StatusPill label="Inactive" color="red" />}
                               {hasQR && (
-                                <span className="flex items-center gap-1 text-[10px] text-green-400/60">
-                                  <CheckCircle2 size={10} /> QR Ready
+                                <span className="flex items-center gap-1 text-[10px]" style={{ color: C.green }}>
+                                  <CheckCircle2 size={8} /> Ready
                                 </span>
                               )}
                             </div>
                           </div>
 
+                          {/* QR ring progress */}
+                          <Ring pct={qrCoverage} size={34} accent={hasQR ? C.green : C.border}>
+                            <QrCode size={10} strokeWidth={1.5} color={hasQR ? C.green : C.muted} />
+                          </Ring>
+
+                          {/* QR thumbnail */}
                           {hasQR && table.qr?.qr_image_url && (
                             <div
-                              className="w-9 h-9 rounded-lg overflow-hidden bg-white flex-shrink-0 border border-white/10 cursor-pointer"
-                              onClick={() => {
-                                sendQR(table.qr!.qr_image_url);
-                                setShowQR(true);
-                              }}
+                              className="w-8 h-8 rounded-lg overflow-hidden bg-white flex-shrink-0 cursor-pointer hover:scale-110 transition-transform"
+                              style={{ border: `1px solid ${accent}30` }}
+                              onClick={() => { setQrSrc(table.qr!.qr_image_url); setShowQR(true); }}
                             >
                               {/* eslint-disable-next-line @next/next/no-img-element */}
-                              <img
-                                src={table.qr.qr_image_url}
-                                alt="QR"
-                                className="w-full h-full object-cover"
-                              />
+                              <img src={table.qr.qr_image_url} alt="QR" className="w-full h-full object-cover" />
                             </div>
                           )}
 
                           <div className="flex items-center gap-1.5 flex-shrink-0">
-                            {/* Generate / Regenerate */}
-                            <button
+                            <AccentBtn
+                              small
                               onClick={() => handleGenerateQR(venue.$id, venue.slug, table.$id, table.table_number, hasQR)}
                               disabled={table.generating || isPending}
-                              className="flex items-center gap-1.5 text-[11px] px-2.5 py-1.5 rounded-lg border transition-all cursor-pointer disabled:opacity-40"
-                              style={{ color: accent, borderColor: `${accent}30`, background: `${accent}08` }}>
+                              accent={accent}
+                            >
                               {table.generating
                                 ? <><Loader2 size={10} className="animate-spin" /> Generating…</>
                                 : hasQR
                                   ? <><RefreshCw size={10} /> Regen</>
                                   : <><QrCode size={10} /> Generate QR</>}
-                            </button>
+                            </AccentBtn>
 
-                            {/* Download */}
                             {hasQR && table.qr && (
-                              <button onClick={() => handleDownload(table.qr!, `${venue.slug}-t${table.table_number}`)}
-                                className="p-1.5 rounded-lg border border-white/[0.06] text-white/25 hover:text-white/60 hover:border-white/15 transition-all cursor-pointer">
+                              <button
+                                onClick={() => handleDownload(table.qr!, `${venue.slug}-t${table.table_number}`)}
+                                className="p-1.5 rounded-xl transition-all cursor-pointer"
+                                style={{ border: `1px solid ${C.border}`, color: C.muted }}
+                                onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.color = C.text; }}
+                                onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.color = C.muted; }}
+                              >
                                 <Download size={12} />
                               </button>
                             )}
 
-                            {/* Toggle */}
-                            <button onClick={() => handleToggleTable(venue.$id, table.$id, table.is_active)} disabled={isPending}
-                              className="text-white/20 hover:text-white/50 cursor-pointer transition-colors p-1">
-                              {table.is_active ? <ToggleRight size={15} className="text-green-400/50" /> : <ToggleLeft size={15} />}
+                            <button
+                              onClick={() => handleToggleTable(venue.$id, table.$id, table.is_active)}
+                              disabled={isPending}
+                              className="cursor-pointer p-1.5 rounded-xl transition-colors"
+                              style={{ color: table.is_active ? C.green : C.muted }}
+                            >
+                              {table.is_active ? <ToggleRight size={15} /> : <ToggleLeft size={15} />}
                             </button>
 
-                            {/* Delete */}
-                            <button onClick={() => handleDeleteTable(venue.$id, table.$id)} disabled={isPending}
-                              className="text-white/15 hover:text-red-400/60 cursor-pointer transition-colors p-1">
-                              <Trash2 size={12} />
+                            <button
+                              onClick={() => handleDeleteTable(venue.$id, table.$id)}
+                              disabled={isPending}
+                              className="cursor-pointer p-1.5 rounded-xl transition-colors"
+                              style={{ color: C.muted }}
+                              onMouseEnter={e => (e.currentTarget.style.color = C.red)}
+                              onMouseLeave={e => (e.currentTarget.style.color = C.muted)}
+                            >
+                              <Trash2 size={11} />
                             </button>
                           </div>
                         </div>
@@ -327,16 +426,17 @@ export default function VenuesPage() {
                     })}
 
                     {venue.tables.length === 0 && (
-                      <p className="text-[12px] text-white/20 italic py-2 px-1">No tables yet</p>
+                      <p className="text-[12px] italic py-2" style={{ color: C.sub }}>No tables yet — add one above.</p>
                     )}
                   </div>
 
                   {showAddTable === venue.$id && (
                     <AddTableForm
+                      accent={accent}
                       onClose={() => setShowTable(null)}
                       onAdd={async (tableNumber, seatCount) => {
                         const table = await createTable({ venue_id: venue.$id, table_number: tableNumber, seat_count: seatCount });
-                        setVenues((p) => p.map((v) =>
+                        setVenues(p => p.map(v =>
                           v.$id === venue.$id
                             ? { ...v, tables: [...(v.tables ?? []), { ...table, qr: null, generating: false }] }
                             : v
@@ -355,129 +455,146 @@ export default function VenuesPage() {
       {showAddVenue && (
         <AddVenueModal
           onClose={() => setShowAdd(false)}
-          onAdd={async (data) => {
+          onAdd={async data => {
             const { venue } = await createVenue(data);
-            setVenues((p) => [...p, { ...venue, tables: [], loading: false }]);
+            setVenues(p => [...p, { ...venue, tables: [], loading: false }]);
             setShowAdd(false);
           }}
         />
       )}
 
-      {showQR && QR && (
-        <QRdisplay
-          QRcode={QR}
-          onClose={() => {
-            setShowQR(false);
-            sendQR(null);
-          }}
-        />
+      {showQR && qrSrc && (
+        <QRModal src={qrSrc} onClose={() => { setShowQR(false); setQrSrc(null); }} />
       )}
-    </div>
+    </PageShell>
   );
 }
 
-function AddTableForm({ onClose, onAdd }: { onClose: () => void; onAdd: (n: number, s: number) => Promise<void> }) {
+/* ─── Add Table Form ─────────────────────────────────── */
+function AddTableForm({ accent, onClose, onAdd }: {
+  accent: string; onClose: () => void; onAdd: (n: number, s: number) => Promise<void>;
+}) {
   const [tableNumber, setTN] = useState("");
   const [seatCount, setSC]   = useState("");
   const [saving, setSaving]  = useState(false);
-  return (
-    <div className="mt-3 flex items-end gap-3 bg-white/[0.02] border border-white/[0.05] rounded-xl px-4 py-3">
-      <div className="flex flex-col gap-1">
-        <label className="text-[10px] text-white/25">Table no.</label>
-        <input type="number" value={tableNumber} onChange={(e) => setTN(e.target.value)} placeholder="5"
-          className="w-20 bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-1.5 text-[13px] text-white placeholder-white/15 outline-none focus:border-white/20" />
-      </div>
-      <div className="flex flex-col gap-1">
-        <label className="text-[10px] text-white/25">Seats</label>
-        <input type="number" value={seatCount} onChange={(e) => setSC(e.target.value)} placeholder="4"
-          className="w-20 bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-1.5 text-[13px] text-white placeholder-white/15 outline-none focus:border-white/20" />
-      </div>
-      <button onClick={async () => { if (!tableNumber || !seatCount) return; setSaving(true); await onAdd(parseInt(tableNumber), parseInt(seatCount)); setSaving(false); }}
-        disabled={saving || !tableNumber || !seatCount}
-        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[#c9a84c]/25 bg-[#c9a84c]/08 text-[#c9a84c]/80 text-[12px] cursor-pointer disabled:opacity-40 transition-all hover:bg-[#c9a84c]/15">
-        {saving && <Loader2 size={11} className="animate-spin" />} Add
-      </button>
-      <button onClick={onClose} className="text-white/25 hover:text-white/50 text-[12px] cursor-pointer px-2">Cancel</button>
-    </div>
-  );
-}
 
-function AddVenueModal({ onClose, onAdd }: {
-  onClose: () => void;
-  onAdd: (data: { name: string; slug: string; description: string; theme: string }) => Promise<void>;
-}) {
-  const [name, setName]     = useState("");
-  const [slug, setSlug]     = useState("");
-  const [desc, setDesc]     = useState("");
-  const [theme, setTheme]   = useState("restaurant");
-  const [saving, setSaving] = useState(false);
-
-  return (
-    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center">
-      <div className="bg-[#0d0f15] border border-white/[0.07] rounded-2xl p-6 w-[420px]">
-        <h2 className="text-[14px] text-white/80 mb-5" style={{ fontFamily: "var(--font-cinzel)", letterSpacing: "0.08em" }}>Add Venue</h2>
-        <div className="flex flex-col gap-3.5">
-          {[
-            { label: "Name", value: name, onChange: (v: string) => { setName(v); setSlug(v.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")); }, placeholder: "e.g. Garden Area" },
-            { label: "Slug", value: slug, onChange: setSlug, placeholder: "e.g. garden" },
-            { label: "Description", value: desc, onChange: setDesc, placeholder: "e.g. Outdoor garden seating" },
-          ].map((f) => (
-            <div key={f.label} className="flex flex-col gap-1.5">
-              <label className="text-[10px] text-white/30">{f.label}</label>
-              <input value={f.value} onChange={(e) => f.onChange(e.target.value)} placeholder={f.placeholder}
-                className="bg-white/[0.04] border border-white/[0.07] rounded-xl px-3 py-2.5 text-[13px] text-white placeholder-white/15 outline-none focus:border-white/15 transition-colors" />
-            </div>
-          ))}
-          <div className="flex flex-col gap-1.5">
-            <label className="text-[10px] text-white/30">Theme</label>
-            <select value={theme} onChange={(e) => setTheme(e.target.value)}
-              className="bg-white/[0.04] border border-white/[0.07] rounded-xl px-3 py-2.5 text-[13px] text-white outline-none focus:border-white/15">
-              <option value="restaurant">Restaurant</option>
-              <option value="pool">Pool</option>
-              <option value="lobby">Lobby Café</option>
-            </select>
-          </div>
-        </div>
-        <div className="flex gap-3 mt-5">
-          <button onClick={async () => { if (!name || !slug) return; setSaving(true); await onAdd({ name, slug, description: desc, theme }); setSaving(false); }}
-            disabled={saving || !name || !slug}
-            className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl border border-[#c9a84c]/25 bg-[#c9a84c]/08 text-[#c9a84c]/80 text-[13px] cursor-pointer disabled:opacity-40 hover:bg-[#c9a84c]/15 transition-all">
-            {saving && <Loader2 size={13} className="animate-spin" />} Create Venue
-          </button>
-          <button onClick={onClose} className="px-4 text-white/25 hover:text-white/50 text-[13px] cursor-pointer">Cancel</button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function QRdisplay({ onClose, QRcode }: {
-  onClose: () => void;
-  QRcode: string;
-}) {
   return (
     <div
-      className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center"
-      onClick={onClose}           // click backdrop to dismiss
+      className="mt-3 flex items-end gap-3 rounded-2xl px-5 py-4"
+      style={{ background: C.bg, border: `1px solid ${accent}20` }}
     >
-      <div
-        className="relative bg-white rounded-2xl p-4 shadow-2xl"
-        onClick={(e) => e.stopPropagation()}   // don't close when clicking the QR itself
+      {[
+        { label: "Table no.", value: tableNumber, set: setTN, ph: "5" },
+        { label: "Seats",     value: seatCount,   set: setSC, ph: "4" },
+      ].map(f => (
+        <div key={f.label} className="flex flex-col gap-1.5">
+          <label className="text-[9px] uppercase tracking-widest" style={{ color: C.muted }}>{f.label}</label>
+          <input
+            type="number" value={f.value}
+            onChange={e => f.set(e.target.value)}
+            placeholder={f.ph}
+            className={`w-20 ${inputCls}`}
+          />
+        </div>
+      ))}
+      <AccentBtn
+        small accent={accent}
+        onClick={async () => { if (!tableNumber || !seatCount) return; setSaving(true); await onAdd(parseInt(tableNumber), parseInt(seatCount)); setSaving(false); }}
+        disabled={saving || !tableNumber || !seatCount}
       >
-        <Image
-          src={QRcode}
-          alt="QR Code"
-          height={500}
-          width={500}
-          className="rounded-xl"
-        />
-        <button
-          onClick={onClose}
-          className="absolute top-3 right-3 w-7 h-7 flex items-center justify-center rounded-full bg-black/10 text-black/50 hover:bg-black/20 hover:text-black transition-all text-[13px] cursor-pointer"
+        {saving && <Loader2 size={10} className="animate-spin" />} Add
+      </AccentBtn>
+      <button onClick={onClose} className="text-[12px] cursor-pointer transition-colors px-2" style={{ color: C.muted }}>
+        Cancel
+      </button>
+    </div>
+  );
+}
+
+/* ─── Add Venue Modal ────────────────────────────────── */
+function AddVenueModal({ onClose, onAdd }: {
+  onClose: () => void;
+  onAdd: (data: { name: string; slug: string; description: string; theme: string; image_url?: string }) => Promise<void>;
+}) {
+  const [name, setName]         = useState("");
+  const [slug, setSlug]         = useState("");
+  const [desc, setDesc]         = useState("");
+  const [theme, setTheme]       = useState("restaurant");
+  const [imageUrl, setImageUrl] = useState("");
+  const [saving, setSaving]     = useState(false);
+  const accent = THEME_COLORS[theme] ?? "#c9a84c";
+
+  return (
+    <Modal onClose={onClose} width="440px">
+      <h2
+        className="text-[20px] font-light mb-0.5"
+        style={{ color: C.text, fontFamily: "var(--font-cormorant)", letterSpacing: "0.03em" }}
+      >
+        New Venue
+      </h2>
+      <p className="text-[11px] mb-5" style={{ color: C.muted }}>Configure your venue details below</p>
+
+      <div className="flex flex-col gap-3.5">
+        {[
+          {
+            label: "Venue name", value: name,
+            onChange: (v: string) => { setName(v); setSlug(v.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")); },
+            ph: "e.g. Garden Area",
+          },
+          { label: "Slug (URL key)", value: slug, onChange: setSlug, ph: "e.g. garden" },
+          { label: "Description",   value: desc, onChange: setDesc, ph: "e.g. Outdoor garden seating" },
+        ].map(f => (
+          <div key={f.label} className="flex flex-col gap-1.5">
+            <label className="text-[10px] uppercase tracking-widest" style={{ color: C.muted }}>{f.label}</label>
+            <input value={f.value} onChange={e => f.onChange(e.target.value)} placeholder={f.ph} className={inputCls} />
+          </div>
+        ))}
+
+        {/* Image URL */}
+        <div className="flex flex-col gap-1.5">
+          <label className="text-[10px] uppercase tracking-widest flex items-center gap-1.5" style={{ color: C.muted }}>
+            <ImageIcon size={9} /> Cover image URL
+            <span className="normal-case tracking-normal ml-1 text-[9px]" style={{ color: C.sub }}>(optional)</span>
+          </label>
+          <input value={imageUrl} onChange={e => setImageUrl(e.target.value)} placeholder="https://…" className={inputCls} />
+          {imageUrl && (
+            <div className="h-20 rounded-xl overflow-hidden mt-1" style={{ border: `1px solid ${accent}25` }}>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={imageUrl} alt="Preview" className="w-full h-full object-cover opacity-80" />
+            </div>
+          )}
+        </div>
+
+        {/* Theme */}
+        <div className="flex flex-col gap-1.5">
+          <label className="text-[10px] uppercase tracking-widest" style={{ color: C.muted }}>Theme</label>
+          <select value={theme} onChange={e => setTheme(e.target.value)} className={inputCls}>
+            <option value="restaurant">Restaurant</option>
+            <option value="pool">Pool</option>
+            <option value="lobby">Lobby Café</option>
+            <option value="event">Event Space</option>
+          </select>
+        </div>
+      </div>
+
+      <div className="flex gap-3 mt-6">
+        <AccentBtn
+          accent={accent}
+          onClick={async () => {
+            if (!name || !slug) return;
+            setSaving(true);
+            await onAdd({ name, slug, description: desc, theme, ...(imageUrl ? { image_url: imageUrl } : {}) });
+            setSaving(false);
+          }}
+          disabled={saving || !name || !slug}
         >
-          ✕
+          {saving && <Loader2 size={12} className="animate-spin" />}
+          Create Venue
+        </AccentBtn>
+        <button onClick={onClose} className="px-4 text-[13px] cursor-pointer transition-colors" style={{ color: C.muted }}>
+          Cancel
         </button>
       </div>
-    </div>
+    </Modal>
   );
 }

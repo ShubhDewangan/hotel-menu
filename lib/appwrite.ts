@@ -34,14 +34,15 @@ export const DB_ID = process.env.NEXT_PUBLIC_DATABASE_ID ?? "";
 
 // ── Collection IDs ───────────────────────────────────────────
 export const COLLECTIONS = {
-  MENUS:           "menu",
-  MENU_CATEGORIES: "menu_categories",
-  MENU_ITEMS:      "menu_items",
-  VENUES:          "venues",
-  TABLES:          "tables",
-  SEATS:           "seats",
-  QR_CODES:        "qr_codes",
-  EVENTS:          "events",
+  MENUS:           process.env.MENU_COLLECTION_ID!,
+  MENU_CATEGORIES: process.env.MENU_CATEGORY_COLLECTION_ID!,
+  MENU_ITEMS:      process.env.MENU_ITEMS_COLLECTION_ID!,
+  VENUES:          process.env.VENUES_COLLECTION_ID!,
+  TABLES:          process.env.TABLES_COLLECTION_ID!,
+  SEATS:           process.env.SEATS_COLLECTION_ID!,
+  QR_CODES:        process.env.QR_CODES_COLLECTION_ID!,
+  EVENTS:          process.env.EVENT_COLLECTION_ID!,
+  SCAN_LOGS:       process.env.SCAN_LOGS_COLLECTION_ID!,
 } as const;
 
 export type CollectionKey = keyof typeof COLLECTIONS;

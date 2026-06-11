@@ -1,148 +1,165 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useState, Suspense } from "react";
+import { useSearchParams } from "next/navigation";
+import { Eye, EyeOff, Loader2 } from "lucide-react";
 import { adminLogin } from "@/lib/actions/auth.actions";
 import Image from "next/image";
 
-export default function AdminLoginPage() {
-  const router = useRouter();
-  const [email, setEmail]       = useState("");
-  const [password, setPassword] = useState("");
-  const [code, setCode]         = useState("");
-  const [error, setError]       = useState("");
-  const [loading, setLoading]   = useState(false);
-
-  const handleSubmit = async () => {
-  if (!email || !password || !code) {
-    setError("All fields are required.");
-    return;
-  }
-  setLoading(true);
-  setError("");
-
-  const result = await adminLogin({ email, password, code });
-
-  if (result.success) {
-  router.replace("/admin/venues");
-} else {
-    setError(result.error ?? "Login failed.");
-    // console.log('hello')
-    setLoading(false);
-  }
+/* ─── Same dark forest green as sidebar ─────────────── */
+const S = {
+  bg:     "#0a1a15",
+  card:   "#122920",
+  border: "rgba(61,214,163,0.12)",
+  teal:   "#3dd6a3",
+  muted:  "rgba(180,210,195,0.45)",
+  input:  {
+    bg:     "rgba(61,214,163,0.05)",
+    border: "rgba(61,214,163,0.15)",
+    focus:  "rgba(201,168,76,0.3)",
+    text:   "rgba(240,245,240,0.8)",
+    ph:     "rgba(180,210,195,0.25)",
+  },
+  gold: "linear-gradient(135deg,#b8922e 0%,#e8ca6a 42%,#f5e080 55%,#c9a84c 100%)",
 };
 
-  return (
-    <div className="min-h-screen bg-[#080a10] flex items-center justify-center relative overflow-hidden">
+const inputBase = [
+  "w-full rounded-xl px-3.5 py-2.5 text-[13px] outline-none transition-all",
+].join(" ");
 
-      {/* Background glow */}
-      <div
-        className="absolute inset-0 pointer-events-none"
-        style={{
-          background: "radial-gradient(ellipse 60% 50% at 50% 50%, #c9a84c08 0%, transparent 70%)",
-        }}
-      />
+function LoginForm() {
+  const params     = useSearchParams();
+  const redirectTo = params.get("redirect") ?? "/admin";
 
-      <div className="relative z-10 w-full max-w-sm px-6">
-        {/* Logo */}
-        <div className="flex flex-col items-center gap-3 mb-10">
-          <svg width="36" height="36" viewBox="0 0 28 28" fill="none">
-            <path d="M14 3C14 3 6 8 6 16C6 20.4 9.6 24 14 24C18.4 24 22 20.4 22 16C22 8 14 3 14 3Z"
-              stroke="#c9a84c" strokeWidth="0.8" fill="none" />
-            <path d="M14 24V10" stroke="#c9a84c" strokeWidth="0.7" strokeLinecap="round" />
-          </svg>
-          <div className="text-center">
-            <p className="text-[#c9a84c] text-[13px] tracking-[0.2em]"
-              style={{ fontFamily: "var(--font-cinzel)" }}>
-              KASOORI
-            </p>
-            <p className="text-white/30 text-[11px] mt-0.5"
-              style={{ fontFamily: "var(--font-cinzel)" }}>
-              Admin Panel
-            </p>
-          </div>
-        </div>
+  const [email,      setEmail]  = useState("");
+  const [password,   setPass]   = useState("");
+  const [secret,     setSecret] = useState("");
+  const [showPass,   setShowP]  = useState(false);
+  const [showSecret, setShowS]  = useState(false);
+  const [loading,    setLoad]   = useState(false);
+  const [error,      setError]  = useState("");
 
-        {/* Card */}
-        <div className="bg-white/[0.03] border border-white/[0.08] rounded-2xl p-6">
-          <h1 className="text-[15px] text-white mb-1"
-            style={{ fontFamily: "var(--font-cinzel)", letterSpacing: "0.08em" }}>
-            Sign In
-          </h1>
-          <p className="text-[12px] text-white/30 mb-6">
-            Enter your credentials to access the admin panel
-          </p>
+  const handleSubmit = async () => {
+    if (!email || !password || !secret) return;
+    setLoad(true); setError("");
+    const res = await adminLogin({ email, password, secretCode: secret, redirectTo });
+    if (res?.error) { setError(res.error); setLoad(false); }
+  };
 
-          <div className="flex flex-col gap-4">
-            {/* Email */}
-            <div className="flex flex-col gap-1.5">
-              <label className="text-[11px] text-white/40">Email</label>
-              <input
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="admin@kasoori.com"
-                className="bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2.5 text-[13px] text-white placeholder-white/20 outline-none focus:border-[#c9a84c]/40 transition-colors"
-              />
-            </div>
-
-            {/* Password */}
-            <div className="flex flex-col gap-1.5">
-              <label className="text-[11px] text-white/40">Password</label>
-              <input
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="••••••••"
-                onKeyDown={(e) => e.key === "Enter" && handleSubmit()}
-                className="bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2.5 text-[13px] text-white placeholder-white/20 outline-none focus:border-[#c9a84c]/40 transition-colors"
-              />
-            </div>
-
-            {/* Secret code */}
-            <div className="flex flex-col gap-1.5">
-              <label className="text-[11px] text-white/40">Secret Code</label>
-              <input
-                type="password"
-                value={code}
-                onChange={(e) => setCode(e.target.value)}
-                placeholder="••••••••"
-                onKeyDown={(e) => e.key === "Enter" && handleSubmit()}
-                className="bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2.5 text-[13px] text-white placeholder-white/20 outline-none focus:border-[#c9a84c]/40 transition-colors"
-              />
-            </div>
-
-            {/* Error */}
-            {error && (
-              <p className="text-[12px] text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">
-                {error}
-              </p>
-            )}
-
-            {/* Submit */}
-            <button
-              onClick={handleSubmit}
-              disabled={loading}
-              className="flex items-center justify-center gap-2 bg-[#c9a84c]/15 hover:bg-[#c9a84c]/25 border border-[#c9a84c]/30 text-[#e8d59a] text-[13px] py-2.5 rounded-lg transition-colors cursor-pointer disabled:opacity-50 mt-1"
-            >
-              {loading ? (
-                <>
-                  <svg className="animate-spin w-4 h-4" viewBox="0 0 24 24" fill="none">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
-                  </svg>
-                  Signing in…
-                </>
-              ) : "Sign In"}
-            </button>
-          </div>
-        </div>
-
-        <p className="text-center text-[10px] text-white/15 mt-6"
-          style={{ fontFamily: "var(--font-cinzel)" }}>
-          Kasoori Methi © 2025
-        </p>
+  const field = (
+    label: string,
+    value: string,
+    onChange: (v: string) => void,
+    opts?: { type?: string; ph?: string; show?: boolean; toggle?: () => void; onEnter?: () => void }
+  ) => (
+    <div className="flex flex-col gap-1.5">
+      <label className="text-[10px] uppercase tracking-[0.18em]" style={{ color: S.muted }}>
+        {label}
+      </label>
+      <div className="relative">
+        <input
+          type={opts?.type ?? "text"}
+          value={value}
+          onChange={e => onChange(e.target.value)}
+          onKeyDown={e => { if (e.key === "Enter") opts?.onEnter?.(); }}
+          placeholder={opts?.ph ?? ""}
+          className={inputBase + " pr-10"}
+          style={{
+            background: S.input.bg,
+            border: `1px solid ${S.input.border}`,
+            color: S.input.text,
+          }}
+          onFocus={e  => (e.target.style.borderColor = S.input.focus)}
+          onBlur={e   => (e.target.style.borderColor = S.input.border)}
+        />
+        {opts?.toggle && (
+          <button
+            type="button"
+            onClick={opts.toggle}
+            className="absolute right-3 top-1/2 -translate-y-1/2 cursor-pointer"
+            style={{ color: S.muted }}
+          >
+            {opts.show ? <EyeOff size={14} /> : <Eye size={14} />}
+          </button>
+        )}
       </div>
     </div>
   );
+
+  return (
+    <div className="min-h-screen flex items-center justify-center p-4" style={{ background: S.bg }}>
+      {/* Ambient glow */}
+      <div
+        className="absolute w-[500px] h-[500px] rounded-full pointer-events-none"
+        style={{
+          background: "radial-gradient(circle, rgba(61,214,163,0.06) 0%, transparent 70%)",
+          top: "50%", left: "50%", transform: "translate(-50%,-50%)",
+        }}
+      />
+
+      <div
+        className="relative w-full max-w-[380px] rounded-[1.75rem] p-8"
+        style={{
+          background: S.card,
+          border: `1px solid ${S.border}`,
+          boxShadow: "0 32px 80px rgba(0,0,0,0.4), inset 0 1px 0 rgba(61,214,163,0.08)",
+        }}
+      >
+        {/* Logo */}
+        <div className="flex flex-col items-center gap-3 mb-8">
+          <div
+            className="w-16 h-16 rounded-2xl flex items-center justify-center"
+            style={{ background: "rgba(61,214,163,0.08)", border: `1px solid ${S.border}` }}
+          >
+            <Image src="/english-logo.png" alt="Kasoori" width={42} height={42} className="opacity-90" />
+          </div>
+          <div className="text-center">
+            <p className="text-[18px] font-light" style={{ color: "rgba(240,245,240,0.85)", fontFamily: "var(--font-cormorant)", letterSpacing: "0.06em" }}>
+              Kasoori
+            </p>
+            <p className="text-[10px] tracking-[0.22em] uppercase mt-0.5" style={{ color: S.muted }}>
+              Admin Access
+            </p>
+          </div>
+        </div>
+
+        <div className="flex flex-col gap-3.5">
+          {field("Email", email, setEmail, { type: "email", ph: "admin@kasoori.com" })}
+          {field("Password", password, setPass, {
+            type: showPass ? "text" : "password", ph: "••••••••",
+            show: showPass, toggle: () => setShowP(p => !p),
+          })}
+          {field("Access Code", secret, setSecret, {
+            type: showSecret ? "text" : "password", ph: "••••••",
+            show: showSecret, toggle: () => setShowS(s => !s), onEnter: handleSubmit,
+          })}
+        </div>
+
+        {error && (
+          <p
+            className="text-[12px] mt-3.5 px-3 py-2 rounded-xl"
+            style={{ background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.18)", color: "rgba(248,113,113,0.85)" }}
+          >
+            {error}
+          </p>
+        )}
+
+        <button
+          onClick={handleSubmit}
+          disabled={loading || !email || !password || !secret}
+          className="w-full mt-5 py-3 rounded-xl text-[13px] font-semibold cursor-pointer disabled:opacity-35 disabled:cursor-not-allowed transition-all hover:brightness-110"
+          style={{ background: S.gold, color: "#6b4e10" }}
+        >
+          {loading
+            ? <span className="flex items-center justify-center gap-2"><Loader2 size={14} className="animate-spin" />Signing in…</span>
+            : "Sign In"
+          }
+        </button>
+      </div>
+    </div>
+  );
+}
+
+export default function AdminLoginPage() {
+  return <Suspense><LoginForm /></Suspense>;
 }

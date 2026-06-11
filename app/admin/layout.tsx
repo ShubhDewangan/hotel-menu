@@ -1,12 +1,14 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
+// app/admin/layout.tsx
 import AdminSidebar from "@/components/admin/AdminSidebar";
+import WaiterCallsPanel from "@/components/admin/WaiterCallsPanel";
 
-export default function AdminLayout({ children }: { children: React.ReactNode }) {
+export default function AdminLayout({ children }: any) {
   return (
-    <div className="flex h-screen bg-[#0a0b10] overflow-hidden">
+    <div className="flex max-h-screen bg-[#0d1f1a]">
       <AdminSidebar />
-      <main className="flex-1 flex flex-col min-h-0 overflow-hidden">
-        {children}
-      </main>
+      {children}
+      <WaiterCallsPanel />  {/* floats fixed bottom-right */}
     </div>
   );
 }

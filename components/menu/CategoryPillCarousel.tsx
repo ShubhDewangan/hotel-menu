@@ -11,8 +11,8 @@ interface CategoryPillCarouselProps {
   theme:      ThemeConfig;
 }
 
-const PILL_W = 450;
-const GAP    = 20;
+const MIN_PILL_W = 350;
+const GAP        = 20;
 
 export default function CategoryPillCarousel({
   categories,
@@ -22,6 +22,16 @@ export default function CategoryPillCarousel({
   const trackRef     = useRef<HTMLDivElement>(null);
   const programmatic = useRef(false);
   const mounted      = useRef(false);
+
+  const recalcPadding = useCallback(() => {
+    const el = trackRef.current;
+    if (!el) return;
+    const firstBtn = el.querySelector<HTMLButtonElement>("button[data-name]");
+    if (!firstBtn) return;
+    const pad = el.offsetWidth / 2 - firstBtn.offsetWidth / 2;
+    el.style.paddingLeft  = `${pad}px`;
+    el.style.paddingRight = `${pad}px`;
+  }, []);
 
   const scrollToBtn = useCallback((idx: number, behavior: ScrollBehavior = "smooth") => {
     const el = trackRef.current;
@@ -33,31 +43,41 @@ export default function CategoryPillCarousel({
     el.scrollTo({ left: Math.max(0, target), behavior });
   }, []);
 
-  // Mount only: instant jump, no scroll events fired
+  // Mount only: recalc padding first, then instant jump
   useEffect(() => {
-    const idx = categories.findIndex((c) => c.name === activeId);
-    scrollToBtn(idx !== -1 ? idx : 0, "instant" as ScrollBehavior);
-    mounted.current = true;
+    requestAnimationFrame(() => {
+      recalcPadding();
+      const idx = categories.findIndex((c) => c.name === activeId);
+      scrollToBtn(idx !== -1 ? idx : 0, "instant" as ScrollBehavior);
+      mounted.current = true;
+    });
   }, []); // eslint-disable-line
+
+  // Recalc padding when categories change (e.g. data loads late)
+  useEffect(() => {
+    requestAnimationFrame(recalcPadding);
+  }, [categories, recalcPadding]);
 
   // External activeId change (e.g. search auto-navigation): smooth scroll
   useEffect(() => {
-    if (!mounted.current) return; // skip initial render, handled above
+    if (!mounted.current) return;
     programmatic.current = true;
     const idx = categories.findIndex((c) => c.name === activeId);
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
+        recalcPadding();
         scrollToBtn(idx !== -1 ? idx : 0, "smooth");
         setTimeout(() => { programmatic.current = false; }, 700);
       });
     });
   }, [activeId]); // eslint-disable-line
 
-  // User drag scroll: live-select centered pill
+  // User drag scroll: select centered pill on settle
   useEffect(() => {
     const el = trackRef.current;
     if (!el) return;
-    const onScroll = () => {
+
+    const selectCentered = () => {
       if (programmatic.current) return;
       const trackMid = el.scrollLeft + el.offsetWidth / 2;
       let bestName = "";
@@ -68,8 +88,30 @@ export default function CategoryPillCarousel({
       });
       if (bestName && bestName !== activeId) onSelect(bestName);
     };
-    el.addEventListener("scroll", onScroll, { passive: true });
-    return () => el.removeEventListener("scroll", onScroll);
+
+    let timer: ReturnType<typeof setTimeout>;
+    const onScroll = () => {
+      if (programmatic.current) return;
+      clearTimeout(timer);
+      timer = setTimeout(selectCentered, 80);
+    };
+
+    const supportsScrollEnd = "onscrollend" in window;
+
+    if (supportsScrollEnd) {
+      el.addEventListener("scrollend", selectCentered, { passive: true });
+    } else {
+      el.addEventListener("scroll", onScroll, { passive: true });
+    }
+
+    return () => {
+      clearTimeout(timer);
+      if (supportsScrollEnd) {
+        el.removeEventListener("scrollend", selectCentered);
+      } else {
+        el.removeEventListener("scroll", onScroll);
+      }
+    };
   }, [activeId, onSelect]);
 
   const handleClick = (name: string, idx: number) => {
@@ -77,7 +119,17 @@ export default function CategoryPillCarousel({
     onSelect(name);
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
+        recalcPadding();
         scrollToBtn(idx, "smooth");
+        const el = trackRef.current;
+        if (el) {
+          el.addEventListener(
+            "scrollend",
+            () => { programmatic.current = false; },
+            { once: true }
+          );
+        }
+        // Safari fallback
         setTimeout(() => { programmatic.current = false; }, 700);
       });
     });
@@ -85,8 +137,8 @@ export default function CategoryPillCarousel({
 
   return (
     <div className="relative flex-shrink-0 w-full z-10">
-      <div className="absolute left-0 top-0 bottom-0 w-24 z-10 pointer-events-none bg-gradient-to-r from-black/70 to-transparent" />
-      <div className="absolute right-0 top-0 bottom-0 w-24 z-10 pointer-events-none bg-gradient-to-l from-black/70 to-transparent" />
+      {/* <div className="absolute left-0 top-0 bottom-0 w-24 z-10 pointer-events-none bg-gradient-to-r from-black/70 to-transparent" />
+      <div className="absolute right-0 top-0 bottom-0 w-24 z-10 pointer-events-none bg-gradient-to-l from-black/70 to-transparent" /> */}
 
       <div
         ref={trackRef}
@@ -95,8 +147,6 @@ export default function CategoryPillCarousel({
           gap:                     GAP,
           scrollSnapType:          "x mandatory",
           WebkitOverflowScrolling: "touch",
-          paddingLeft:             `calc(50% - ${PILL_W / 2}px)`,
-          paddingRight:            `calc(50% - ${PILL_W / 2}px)`,
         }}
       >
         {categories.map((cat, idx) => {
@@ -117,7 +167,7 @@ export default function CategoryPillCarousel({
                   ? "bg-amber-100/80 scale-100 opacity-100 shadow-lg shadow-[#e9d087]/20"
                   : "bg-amber-100/70 scale-95 opacity-60",
               ].join(" ")}
-              style={{ width: PILL_W, minWidth: PILL_W }}
+              style={{ minWidth: MIN_PILL_W, width: "clamp(350px, 30vw, 450px)" }}
             >
               {cat.name}
             </button>

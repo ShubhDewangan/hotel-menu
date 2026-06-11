@@ -12,6 +12,7 @@ import CartDrawer                from "@/components/menu/CartDrawer";
 import { CartProvider, useCart } from "@/context/CartContext";
 import { MenuConfig }            from "@/types/menu";
 import { ThemeConfig }           from "@/lib/themeConfig";
+import Searchbar from "../ui/Searchbar";
 
 interface MenuPageClientProps {
   menu:      MenuConfig;
@@ -27,12 +28,21 @@ function MenuPageInner({ menu, theme }: Omit<MenuPageClientProps, "venueSlug" | 
   const [cartOpen,    setCartOpen]    = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const { totalCount } = useCart();
+   const [isMd, setIsMd]        = useState(false);
 
   const visited = useRef<Set<string>>(new Set([menu.categories[0]?.name ?? ""]));
 
   const handleCategorySelect = useCallback((name: string) => {
     visited.current.add(name);
     setActiveCategory(name);
+  }, []);
+
+  useEffect(() => {
+    const mq = window.matchMedia("(min-width: 768px)");
+    setIsMd(mq.matches);
+    const handler = (e: MediaQueryListEvent) => setIsMd(e.matches);
+    mq.addEventListener("change", handler);
+    return () => mq.removeEventListener("change", handler);
   }, []);
 
   // ── Auto-navigate to the first category that contains a search match ──
@@ -84,25 +94,8 @@ function MenuPageInner({ menu, theme }: Omit<MenuPageClientProps, "venueSlug" | 
           </div>
 
           {/* Search bar */}
-          <div
-            className="flex-1 max-w-[600px] flex items-center gap-2 rounded-full px-4 py-2 transition-all duration-200"
-            style={{
-              background: "rgba(239,236,227,0.10)",
-              border:     "1px solid rgba(239,236,227,0.22)",
-            }}
-          >
-            <Search size={14} style={{ color: theme.accentHex }} className="flex-shrink-0" />
-            <input
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search the dish you want to try…"
-              className="flex-1 bg-transparent outline-none font-cormorant text-[14px] text-white/80 placeholder-white/30"
-            />
-            {searchQuery && (
-              <button onClick={() => setSearchQuery("")} className="text-white/40 hover:text-white/70 cursor-pointer">
-                <X size={14} />
-              </button>
-            )}
+          <div className="hidden md:block">
+            <Searchbar value={searchQuery} onChange={setSearchQuery} />
           </div>
 
           {/* Right */}
@@ -125,6 +118,10 @@ function MenuPageInner({ menu, theme }: Omit<MenuPageClientProps, "venueSlug" | 
             </button>
           </div>
         </header>
+
+        <div className="block md:hidden px-5 pb-5">
+          <Searchbar value={searchQuery} onChange={setSearchQuery} />
+        </div>
 
         {/* Venue label */}
         <div className="flex items-center justify-center gap-3 flex-shrink-0 pb-1">
@@ -163,7 +160,7 @@ function MenuPageInner({ menu, theme }: Omit<MenuPageClientProps, "venueSlug" | 
               return (
                 <div
                   key={cat.name}
-                  className="absolute inset-0 overflow-y-auto"
+                  className="absolute inset-0 overflow-y-auto custom-scrollbar"
                   style={{
                     visibility:    isActive ? "visible" : "hidden",
                     pointerEvents: isActive ? "auto"    : "none",
@@ -186,7 +183,7 @@ function MenuPageInner({ menu, theme }: Omit<MenuPageClientProps, "venueSlug" | 
           <div className="flex-shrink-0 pb-4 -mt-3 text-center">
             <button
               onClick={() => setCartOpen(true)}
-              className="font-cinzel text-[10px] tracking-[0.12em] cursor-pointer hover:opacity-80 transition-opacity"
+              className="font-mono text-[10px] tracking-[0.12em] cursor-pointer hover:opacity-80 transition-opacity"
               style={{ color: theme.accentHex }}
             >
               {totalCount} item{totalCount !== 1 ? "s" : ""} selected — tap to review
@@ -196,14 +193,22 @@ function MenuPageInner({ menu, theme }: Omit<MenuPageClientProps, "venueSlug" | 
       </div>
 
       {/* ── Cart panel ──────────────────────────────────────────────────── */}
-      <div
-        className="relative z-10 flex-shrink-0 transition-all duration-300 ease-in-out overflow-hidden"
-        style={{ width: cartOpen ? "360px" : "0px", opacity: cartOpen ? 1 : 0 }}
-      >
-        <div className="w-[360px] h-full">
-          <CartDrawer open={cartOpen} onClose={() => setCartOpen(false)} theme={theme} inline />
+      {/* ── Cart panel — desktop split only ──────────────────────────── */}
+      {isMd && (
+        <div
+          className="relative z-10 flex-shrink-0 transition-all duration-300 ease-in-out overflow-hidden"
+          style={{ width: cartOpen ? "360px" : "0px", opacity: cartOpen ? 1 : 0 }}
+        >
+          <div className="w-[360px] h-full">
+            <CartDrawer open={cartOpen} onClose={() => setCartOpen(false)} theme={theme} inline />
+          </div>
         </div>
-      </div>
+      )}
+
+      {/* ── Cart panel — mobile fixed overlay ────────────────────────── */}
+      {!isMd && (
+        <CartDrawer open={cartOpen} onClose={() => setCartOpen(false)} theme={theme} />
+      )}
     </div>
   );
 }
