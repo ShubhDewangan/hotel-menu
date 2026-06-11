@@ -16,7 +16,7 @@ function getDB() {
   return new Databases(client);
 }
 
-export async function GET(
+export default async function GET(
   req: NextRequest,
   { params }: { params: Promise<{ slug: string }> }
 ) {
